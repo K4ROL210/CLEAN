@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>CLEAN QUEST</title>
+  <meta name="theme-color" content="#2BB673">
+  <meta name="description" content="Sprzątanie jako gra: AI układa misje, Ty zdobywasz punkty.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="CLEAN QUEST">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <button class="avatar-mini" data-go="creature" aria-label="Twój stworek"></button>
+    <div class="brand">CLEAN<span>QUEST</span></div>
+    <div class="stats">
+      <div class="pill streak" title="Passa"><span>🔥</span><b id="hdrStreak">0</b></div>
+      <div class="pill coins" title="Punkty"><span>⭐</span><b id="hdrPoints">0</b></div>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <nav class="bottomnav" id="bottomnav">
+    <button data-go="home"><span>🏠</span>Dom</button>
+    <button data-go="badges"><span>🏅</span>Odznaki</button>
+    <button data-go="creature"><span>🐾</span>Stworek</button>
+    <button data-go="settings"><span>⚙️</span>Profil</button>
+  </nav>
+
+  <input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+  <div id="modal" class="modal" hidden></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="badges.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

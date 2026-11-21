@@ -1536,12 +1536,8 @@ SCREENS.settings = () => {
       <div class="row"><button class="btn ghost" id="dayPlus">➕ Dzień passy</button><button class="btn ghost" id="dayMiss">➖ Opuść dzień</button></div>
       <button class="btn ghost" id="lvlPlus">🐾 +1 poziom stworka</button>
       <button class="btn ghost" id="add">+200 ⭐ i +200 w każdej kategorii</button>
-    </div>` : ""}
-    <div class="card">
-      <div class="label">Dane</div>
-      <p class="hint" style="text-align:left;margin:6px 0 12px">Usuwa punkty, odznaki, passę i stworka na tym urządzeniu.</p>
       <button class="btn red" id="reset">Wyczyść cały postęp</button>
-    </div>`;
+    </div>` : ""}`;
   if (DEV_TOOLS) bindDevTools();
   $("#name").onchange = (e) => { S.name = e.target.value.trim() || "Graczu"; save(); toast("Zapisano"); };
   if ($("#installBtn2")) $("#installBtn2").onclick = installGuide;
@@ -1553,7 +1549,7 @@ SCREENS.settings = () => {
     save();
     go("settings");
   }));
-  $("#reset").onclick = () => openSheet(`
+  if ($("#reset")) $("#reset").onclick = () => openSheet(`
       <h2>Wyczyścić postęp?</h2>
       <p class="muted" style="font-weight:700">Punkty, odznaki, passa i stworek wrócą do zera.</p>
       <div class="row"><button class="btn ghost" id="no">Anuluj</button><button class="btn red" id="yes">Wyczyść</button></div>`,

@@ -694,7 +694,8 @@ const INSTALL_STEPS = {
   android: `<ol class="install-steps">
       <li>Otwórz tę stronę w <b>Chrome</b>.</li>
       <li>Stuknij <b>⋮</b> w prawym górnym rogu.</li>
-      <li>Wybierz <b>„Zainstaluj aplikację”</b> albo <b>„Dodaj do ekranu głównego”</b>.</li>
+      <li>Wybierz <b>„Zainstaluj aplikację”</b>, <b>„Zainstaluj i utwórz skrót”</b> albo <b>„Dodaj do ekranu głównego”</b>
+        (zależnie od telefonu).</li>
       <li>Potwierdź: <b>Zainstaluj</b>.</li>
     </ol>
     <p class="hint">Samsung Internet: ☰ → „Dodaj stronę do” → „Ekran startowy”.</p>`,

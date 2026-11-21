@@ -1,6 +1,6 @@
 // Service worker: najpierw sieć (żeby zawsze była najnowsza wersja), a bez internetu – kopia z pamięci.
-const CACHE = "cleanquest-v2";
-const SHELL = ["./", "index.html", "style.css", "app.js", "badges.js", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
+const CACHE = "cleanquest-v4";
+const SHELL = ["./", "index.html", "style.css", "config.js", "app.js", "badges.js", "ai.js", "manifest.json", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

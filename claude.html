@@ -1,0 +1,32 @@
+<title>CLEAN QUEST</title>
+<!-- Wersja na claude.ai (Artifact). Treść taka sama jak index.html, ale bez <html>/<head> – platforma dodaje je sama. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+
+<header class="topbar" id="topbar">
+  <button class="avatar-mini" data-go="creature" aria-label="Twój stworek"></button>
+  <div class="brand">CLEAN<span>QUEST</span></div>
+  <div class="stats">
+    <div class="pill streak" title="Passa"><span id="hdrStreakIcon">🪨</span><b id="hdrStreak">0</b></div>
+    <div class="pill coins" title="Punkty"><span>⭐</span><b id="hdrPoints">0</b></div>
+  </div>
+</header>
+
+<main id="app"></main>
+
+<nav class="bottomnav" id="bottomnav">
+  <button data-go="home"><span>🏠</span>Dom</button>
+  <button data-go="badges"><span>🏅</span>Odznaki</button>
+  <button data-go="creature"><span>🐾</span>Stworek</button>
+  <button data-go="settings"><span>⚙️</span>Profil</button>
+</nav>
+
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="badges.js"></script>
+<script src="ai.js"></script>
+<script src="app.js"></script>

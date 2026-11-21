@@ -1,0 +1,21 @@
+# CLEAN QUEST – konfiguracja serwera AI na Cloudflare
+name = "clean-quest-ai"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Adres strony, która może korzystać z serwera (Twoje GitHub Pages). Kilka adresów – po przecinku.
+ALLOWED_ORIGINS = "https://k4rol210.github.io"
+# Model do skanów i skanu czystości (dokładny) oraz do szybkiego sprawdzania misji.
+MODEL_DEFAULT = "claude-opus-5-5"
+MODEL_QUICK = "claude-haiku-5-5"
+
+# Najwyżej 20 zapytań na minutę z jednego adresu IP.
+[[ratelimits]]
+name = "LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60

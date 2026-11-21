@@ -84,6 +84,22 @@ const BADGES_PER_EVOLVE = 9;
 const STAGES = ["Kurzynek", "Pyłek", "Ścierek", "Mopik", "Błyskun", "Lśniak",
   "Książę Porządku", "Król Czystości", "Smok Czystości", "Legenda Porządku"];
 
+// Passa rośnie jak roślinka. [od ilu dni, ikonka, nazwa]
+const STREAK_STAGES = [
+  [0, "🪨", "Pusta ziemia"],
+  [1, "🌰", "Nasionko"],
+  [2, "🌱", "Kiełek"],
+  [3, "🍃", "Listek"],
+  [5, "🌿", "Porosty"],
+  [7, "🪴", "Krzaczek"],
+  [14, "🌳", "Drzewo"],
+  [21, "🌷", "Kwiatki"],
+  [30, "🌸", "Kwitnące drzewo"],
+  [60, "🍎", "Owocowe drzewo"],
+  [100, "🌲", "Las"],
+  [365, "🌈", "Rajski ogród"],
+];
+
 const FAIL_MSG = {
   adult: [
     "Zacznij sprzątać dalej, bo nie widzę tu posprzątania.",
@@ -158,14 +174,26 @@ function dayKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function currentStreak() {
+// Długość passy kończącej się w danym dniu.
+function streakAt(date) {
   const set = new Set(S.activeDays);
-  let d = new Date();
-  if (!set.has(dayKey(d))) d = addDays(d, -1); // dziś jeszcze można przedłużyć
-  let n = 0;
+  let d = new Date(date), n = 0;
   while (set.has(dayKey(d))) { n++; d = addDays(d, -1); }
   return n;
 }
+function currentStreak() {
+  const today = new Date();
+  // dziś jeszcze można przedłużyć, więc liczy się też passa do wczoraj
+  return activeToday() ? streakAt(today) : streakAt(addDays(today, -1));
+}
+function streakStage(n) {
+  let idx = 0;
+  STREAK_STAGES.forEach((s, i) => { if (n >= s[0]) idx = i; });
+  const [, icon, name] = STREAK_STAGES[idx];
+  const next = STREAK_STAGES[idx + 1];
+  return { icon, name, next: next ? { days: next[0], icon: next[1], name: next[2] } : null };
+}
+function dni(n) { return n === 1 ? "dzień" : "dni"; }
 function activeToday() { return S.activeDays.includes(dayKey()); }
 function markActive() {
   const k = dayKey();
@@ -174,7 +202,11 @@ function markActive() {
   if (S.activeDays.length > 400) S.activeDays = S.activeDays.slice(-400);
   const c = currentStreak();
   if (c > S.bestStreak) S.bestStreak = c;
-  setTimeout(() => toast(`🔥 Passa przedłużona: ${c} ${c === 1 ? "dzień" : "dni"}!`), 900);
+  const st = streakStage(c);
+  const grew = st.name !== streakStage(c - 1).name;
+  setTimeout(() => toast(grew
+    ? `${st.icon} Twoja passa urosła: ${st.name}! (${c} ${dni(c)})`
+    : `${st.icon} Passa przedłużona: ${c} ${dni(c)}!`), 900);
 }
 
 /* ---- punkty ---- */
@@ -239,7 +271,9 @@ function creatureSVG(level) {
 
 function renderHeader(bump) {
   $("#hdrPoints").textContent = S.points;
-  $("#hdrStreak").textContent = currentStreak();
+  const streakNow = currentStreak();
+  $("#hdrStreak").textContent = streakNow;
+  $("#hdrStreakIcon").textContent = streakStage(streakNow).icon;
   $(".avatar-mini").innerHTML = creatureSVG(S.avatarLevel);
   if (bump) {
     const p = $(".pill.coins");
@@ -341,9 +375,10 @@ SCREENS.home = () => {
     const d = addDays(monday, i);
     const on = S.activeDays.includes(dayKey(d));
     const isToday = dayKey(d) === dayKey(today);
-    return `<div class="${on ? "on" : ""} ${isToday ? "today" : ""}"><i>${on ? "🔥" : ""}</i>${n}</div>`;
+    return `<div class="${on ? "on" : ""} ${isToday ? "today" : ""}"><i>${on ? streakStage(streakAt(d)).icon : ""}</i>${n}</div>`;
   }).join("");
   const streak = currentStreak();
+  const st = streakStage(streak);
   const cleanToday = S.cleanBonus[dayKey()] || [];
 
   app.innerHTML = `
@@ -359,11 +394,15 @@ SCREENS.home = () => {
 
     <div class="card">
       <div class="streak-head">
-        <h2>🔥 ${streak} ${streak === 1 ? "dzień" : "dni"} passy</h2>
-        <span class="label">Rekord: ${S.bestStreak}</span>
+        <div class="streak-plant">${st.icon}</div>
+        <div style="flex:1">
+          <h2>${streak} ${dni(streak)} passy</h2>
+          <div class="label">${st.name} · rekord: ${S.bestStreak}</div>
+        </div>
       </div>
+      ${st.next ? `<div class="hint" style="text-align:left;margin-top:8px">Jeszcze ${st.next.days - streak} ${dni(st.next.days - streak)} do: ${st.next.icon} ${st.next.name}</div>` : ""}
       <div class="week">${week}</div>
-      ${activeToday() ? "" : `<div class="hint" style="margin-top:12px">Ukończ dziś misję albo skan czystości, żeby utrzymać passę.</div>`}
+      ${activeToday() ? "" : `<div class="hint" style="margin-top:12px">Ukończ dziś misję albo skan czystości, żeby podlać swoją roślinkę 💧</div>`}
     </div>
 
     <button class="card bonus-card" id="cleanBtn" style="width:100%;text-align:left">
@@ -584,7 +623,7 @@ SCREENS.summary = () => {
       <div class="icon">${r.emoji}✨</div>
       <h1>${r.name} posprzątana!</h1>
       <div class="gain">+${ses.earned} pkt</div>
-      <p class="muted" style="font-weight:800">Łączny czas: ${fmtTime(total)} · 🔥 passa: ${currentStreak()}</p>
+      <p class="muted" style="font-weight:800">Łączny czas: ${fmtTime(total)} · ${streakStage(currentStreak()).icon} passa: ${currentStreak()}</p>
     </div>
     <div class="card">
       <table class="score-table">

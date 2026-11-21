@@ -58,7 +58,7 @@ h1, h2, h3 { font-family: var(--font-head); margin: 0; line-height: 1.1; }
   padding: 4px 10px; border-radius: 999px; font-weight: 800;
   background: var(--card); border: 2px solid var(--line);
 }
-.pill.streak b { color: var(--orange); }
+.pill.streak b { color: var(--green-dark); }
 .pill.coins b { color: var(--yellow-dark); }
 .pill.bump { animation: bump .5s; }
 @keyframes bump { 40% { transform: scale(1.25); } }
@@ -127,10 +127,16 @@ body.flow .bottomnav { display: none; }
   width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-style: normal;
   background: #F1EADB; font-size: 18px;
 }
-.week .on i { background: #FFE8D6; box-shadow: inset 0 0 0 2px var(--orange); }
+.week .on i { background: #E3F5EA; box-shadow: inset 0 0 0 2px var(--green); }
 .week .today { color: var(--ink); }
-.streak-head { display: flex; align-items: center; justify-content: space-between; }
-.streak-head h2 { font-size: 26px; color: var(--orange); }
+.streak-head { display: flex; align-items: center; gap: 12px; }
+.streak-head h2 { font-size: 26px; color: var(--green-dark); }
+.streak-plant {
+  width: 64px; height: 64px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  font-size: 38px; background: #E3F5EA; box-shadow: inset 0 0 0 3px var(--green);
+  animation: sway 3s ease-in-out infinite; transform-origin: 50% 90%;
+}
+@keyframes sway { 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
 
 .bonus-card { display: flex; align-items: center; gap: 14px; background: #E8F7EF; border-color: #BFE8D2; }
 .bonus-card .big { font-size: 40px; }

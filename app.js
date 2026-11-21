@@ -685,10 +685,12 @@ const SHARE_ICON = `<svg class="ios-share" viewBox="0 0 24 24" aria-label="ikona
 const INSTALL_STEPS = {
   ios: `<ol class="install-steps">
       <li>Otwórz tę stronę w <b>Safari</b>.</li>
-      <li>Stuknij <b>Udostępnij</b> ${SHARE_ICON} na dolnym pasku. W nowszym iOS najpierw stuknij <b>„⋯”</b>.</li>
-      <li>Przewiń listę albo stuknij <b>„Więcej”</b> i wybierz <b>„Do ekranu początkowego”</b>.</li>
-      <li>Zostaw włączone <b>„Otwórz jako aplikację”</b> i stuknij <b>Dodaj</b>.</li>
-    </ol>`,
+      <li>Stuknij <b>☰</b> (trzy kreseczki) na pasku Safari.</li>
+      <li>Wybierz <b>Udostępnij</b> ${SHARE_ICON}.</li>
+      <li>Stuknij <b>„Więcej opcji”</b>.</li>
+      <li>Wybierz <b>„Dodaj do ekranu głównego”</b> i potwierdź <b>Dodaj</b>.</li>
+    </ol>
+    <p class="hint">Nie widzisz ☰? Stuknij od razu <b>Udostępnij</b> ${SHARE_ICON} na dolnym pasku.</p>`,
   android: `<ol class="install-steps">
       <li>Otwórz tę stronę w <b>Chrome</b>.</li>
       <li>Stuknij <b>⋮</b> w prawym górnym rogu.</li>

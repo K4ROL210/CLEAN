@@ -120,11 +120,7 @@ async function photoHash(file) {
   }
 }
 
-function who(mode) {
-  return mode === "kid"
-    ? "Gracz to dziecko w wieku ok. 6–10 lat. Pisz prosto, ciepło i wesoło. Zadania mają być małe i bezpieczne: bez noży, chemii, gorących ani ciężkich rzeczy."
-    : "Gracz to dorosły. Pisz krótko i konkretnie, z odrobiną humoru.";
-}
+const WHO = "Gracz to dorosły. Pisz krótko i konkretnie, z odrobiną humoru.";
 
 // Uwagi gracza o pomieszczeniu (np. "miotła zawsze stoi w kącie") – rzeczy na swoim stałym miejscu to nie bałagan.
 function notesBlock(notes) {
@@ -163,14 +159,14 @@ function guessCategory(text) {
 }
 
 /** Skan bałaganu (1–3 zdjęcia) → lista misji. */
-AI.analyzeRoom = async ({ roomName, mode, photos, notes }) => {
-  const [min, max] = mode === "kid" ? [2, 4] : [3, 6];
+AI.analyzeRoom = async ({ roomName, photos, notes }) => {
+  const [min, max] = [3, 6];
   const imgs = [];
   for (const p of photos.slice(0, Math.max(1, AI.maxImages))) imgs.push(await shrinkImage(p));
   const cats = TASK_CATEGORIES.map((k) => `- "${k}" – ${BADGE_CATEGORIES[k].ai}`).join("\n");
   const prompt = `Jesteś asystentem w grze CLEAN QUEST, która zamienia sprzątanie w misje na czas.
 ${imgs.length > 1 ? `Dostajesz ${imgs.length} zdjęcia tego samego pomieszczenia (${roomName}) z różnych stron.` : `Na zdjęciu jest pomieszczenie: ${roomName}.`}
-${who(mode)}
+${WHO}
 ${notesBlock(notes)}
 Rozpoznaj bałagan widoczny na zdjęciach i ułóż od ${min} do ${max} misji sprzątania w najlepszej kolejności:
 najpierw rzeczy pilne (np. jedzenie wymagające chłodzenia do lodówki), potem naczynia, śmieci,
@@ -221,7 +217,7 @@ Odpowiedz wyłącznie JSON-em w tym formacie:
  * które na nim widać. `pending` to numery punktów, które jeszcze nie są zaliczone.
  * Zwraca {done: [numery zaliczonych teraz punktów], message}.
  */
-AI.verifyMission = async ({ roomName, mode, mission, pending, before, after, comment, notes }) => {
+AI.verifyMission = async ({ roomName, mission, pending, before, after, comment, notes }) => {
   const befores = (before || []).slice(0, Math.max(0, Math.min(2, AI.maxImages - 1)));
   const images = [];
   for (const b of befores) images.push(await shrinkImage(b));
@@ -233,7 +229,7 @@ AI.verifyMission = async ({ roomName, mode, mission, pending, before, after, com
     const c = mission.checks[i];
     return `${i}. ${c.where ? `[${c.where}] ` : ""}${c.check}`;
   }).join("\n");
-  const prompt = `Gra CLEAN QUEST. Pomieszczenie: ${roomName}. ${who(mode)}
+  const prompt = `Gra CLEAN QUEST. Pomieszczenie: ${roomName}. ${WHO}
 Misja gracza: "${mission.text}".
 Punkty do zaliczenia (numer. [miejsce] co ma być widać):
 ${list}
@@ -257,8 +253,8 @@ Odpowiedz wyłącznie JSON-em:
 };
 
 /** Skan czystości (bonus +14): czy całe pomieszczenie jest naprawdę posprzątane. */
-AI.verifyClean = async ({ roomName, mode, photo, comment, notes }) => {
-  const prompt = `Gra CLEAN QUEST: bonus za utrzymanie porządku. ${who(mode)}
+AI.verifyClean = async ({ roomName, photo, comment, notes }) => {
+  const prompt = `Gra CLEAN QUEST: bonus za utrzymanie porządku. ${WHO}
 Na zdjęciu ma być posprzątane pomieszczenie: ${roomName}.
 ${notesBlock(notes)}${commentBlock(comment)}
 Oceń uczciwie i dość surowo, czy pomieszczenie jest naprawdę uporządkowane: nic zbędnego nie leży na wierzchu,

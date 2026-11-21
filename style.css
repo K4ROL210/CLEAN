@@ -30,7 +30,6 @@ body {
   min-height: 100dvh;
   padding-bottom: calc(84px + env(safe-area-inset-bottom));
 }
-body.kid { font-size: 18px; }
 body.flow { padding-bottom: 24px; }
 button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
 svg.creature { display: block; width: 100%; height: auto; overflow: visible; }
@@ -286,7 +285,6 @@ body.gated .topbar, body.gated .bottomnav { display: none; }
 .steps i.done { background: var(--green); }
 .steps i.now { background: var(--yellow); }
 .task { font-size: 30px; text-align: center; margin: 6px 0 18px; }
-body.kid .task { font-size: 34px; }
 .timer {
   text-align: center; padding: 22px 12px; border-radius: 24px;
   background: var(--ink); color: #fff; margin-bottom: 16px;

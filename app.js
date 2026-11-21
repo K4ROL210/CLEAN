@@ -1,4 +1,4 @@
-// CLEAN QUEST – Etap 0 (prototyp). AI jest symulowane: o wyniku weryfikacji decydujesz przyciskiem testowym.
+// CLEAN QUEST – sprzątanie jako gra. AI (Claude) układa misje ze zdjęć i sprawdza zdjęcia kontrolne.
 "use strict";
 
 /* ============ DANE ============ */
@@ -6,7 +6,7 @@
 const ROOMS = {
   kitchen: {
     name: "Kuchnia", emoji: "🍳",
-    adult: [
+    missions: [
       "Włóż do lodówki wszystko, co powinno być w lodówce",
       "Włóż brudne naczynia do zmywarki albo zlewu",
       "Wyrzuć śmieci i puste opakowania",
@@ -15,17 +15,10 @@ const ROOMS = {
       "Przetrzyj płytę kuchenną",
       "Rozpakuj zmywarkę",
     ],
-    kid: [
-      "Zanieś swój talerz i kubek do zlewu",
-      "Wyrzuć papierki do kosza",
-      "Schowaj przekąski na swoje miejsce",
-      "Dosuń krzesła do stołu",
-      "Przetrzyj stół ściereczką",
-    ],
   },
   bathroom: {
     name: "Łazienka", emoji: "🛁",
-    adult: [
+    missions: [
       "Odłóż kosmetyki na półkę",
       "Wrzuć brudne ubrania do kosza na pranie",
       "Powieś ręczniki",
@@ -33,16 +26,10 @@ const ROOMS = {
       "Przetrzyj umywalkę",
       "Przetrzyj lustro",
     ],
-    kid: [
-      "Odłóż szczoteczkę i pastę do kubka",
-      "Wrzuć brudne ubrania do kosza na pranie",
-      "Powieś swój ręcznik",
-      "Wyłów zabawki z wanny",
-    ],
   },
   living: {
     name: "Salon", emoji: "🛋️",
-    adult: [
+    missions: [
       "Zbierz naczynia i zanieś je do kuchni",
       "Odnieś rzeczy, które nie należą do salonu",
       "Zbierz śmieci i wyrzuć je",
@@ -50,27 +37,15 @@ const ROOMS = {
       "Odłóż piloty i ładowarki na miejsce",
       "Przetrzyj stolik",
     ],
-    kid: [
-      "Pozbieraj zabawki do pudełka",
-      "Zanieś kubki do kuchni",
-      "Ułóż poduszki na kanapie",
-      "Odłóż książki na półkę",
-    ],
   },
   bedroom: {
     name: "Sypialnia", emoji: "🛏️",
-    adult: [
+    missions: [
       "Wrzuć brudne ubrania do kosza na pranie",
       "Odwieś czyste ubrania do szafy",
       "Wynieś naczynia i śmieci",
       "Pościel łóżko",
       "Uporządkuj szafkę nocną",
-    ],
-    kid: [
-      "Pozbieraj zabawki z podłogi",
-      "Wrzuć brudne ubrania do kosza",
-      "Schowaj piżamę pod poduszkę",
-      "Pościel łóżko (choć trochę!)",
     ],
   },
 };
@@ -100,23 +75,17 @@ const STREAK_STAGES = [
   [365, "🌈", "Rajski ogród"],
 ];
 
-const FAIL_MSG = {
-  adult: [
-    "Zacznij sprzątać dalej, bo nie widzę tu posprzątania.",
-    "Jeszcze nie wszystko! Sprawdź rzeczy, które zostały na wierzchu.",
-    "Prawie! AI widzi jeszcze kilka rzeczy do odłożenia.",
-  ],
-  kid: [
-    "Jeszcze chwilka! Coś zostało do posprzątania 🙂",
-    "Prawie! Rozejrzyj się jeszcze raz.",
-  ],
-};
+const FAIL_MSG = [
+  "Zacznij sprzątać dalej, bo nie widzę tu posprzątania.",
+  "Jeszcze nie wszystko! Sprawdź rzeczy, które zostały na wierzchu.",
+  "Prawie! AI widzi jeszcze kilka rzeczy do odłożenia.",
+];
 
 /* ============ STAN ============ */
 
 const STORE_KEY = "cleanquest.v1";
 const DEFAULT_STATE = {
-  name: "Graczu", mode: "adult", points: 0, totalEarned: 0, missionsDone: 0,
+  name: "Graczu", points: 0, totalEarned: 0, missionsDone: 0,
   activeDays: [], bestStreak: 0, badges: [], avatarLevel: 0, cleanBonus: {}, photoHashes: [], session: null,
   frozenDays: [],      // dni passy uratowane zamrożeniem
   avatarHalf: false,   // stworek stracił połówkę (zamrożenie passy)
@@ -143,6 +112,7 @@ function normalize(raw) {
     delete s.lostHalves;
   }
   if (!s.peakLevel || s.peakLevel < s.avatarLevel) s.peakLevel = s.avatarLevel;
+  delete s.mode; // dawny przełącznik dorosły/dziecko – jest już jeden tryb
   if (s.session) s.session.missions = s.session.missions.map(missionOf);
   return s;
 }
@@ -546,7 +516,6 @@ function renderHeader(bump) {
     const p = $(".pill.coins");
     p.classList.remove("bump"); void p.offsetWidth; p.classList.add("bump");
   }
-  document.body.classList.toggle("kid", S.mode === "kid");
 }
 
 let toastTimer;
@@ -885,8 +854,8 @@ SCREENS.home = () => {
 
 /* ---------- SKAN BAŁAGANU → MISJE ---------- */
 function pickMissions(roomKey) {
-  const list = ROOMS[roomKey][S.mode];
-  const want = S.mode === "kid" ? 3 + Math.round(Math.random()) : 4 + Math.floor(Math.random() * 3);
+  const list = ROOMS[roomKey].missions;
+  const want = 4 + Math.floor(Math.random() * 3);
   // pierwsza misja (najważniejsza) zawsze, reszta losowo – ale w ustalonej kolejności
   const rest = list.slice(1).map((m, i) => ({ m, i, r: Math.random() })).sort((a, b) => a.r - b.r)
     .slice(0, Math.min(want, list.length) - 1).sort((a, b) => a.i - b.i).map((x) => x.m);
@@ -932,7 +901,7 @@ SCREENS.room = ({ room }) => {
       return;
     }
     try {
-      const res = await AI.analyzeRoom({ roomName: r.name, mode: S.mode, photos: photoMemory.before, notes: roomNotes(room) });
+      const res = await AI.analyzeRoom({ roomName: r.name, photos: photoMemory.before, notes: roomNotes(room) });
       if (screenToken !== my) return;
       if (!res.valid) return problem(`Te zdjęcia nie wyglądają na: ${r.name}. ${res.comment}`);
       if (!res.missions.length) return alreadyClean(res.comment);
@@ -1145,7 +1114,6 @@ SCREENS.mission = () => {
 // onFail(message, failAt) – failAt: kiedy AI pierwszy raz odrzuciło (czas od tej chwili się liczy).
 function verifyUI({ url, file, title, room, checks, aiCheck, onPass, onFail, failLabel = "🧹 Sprzątam dalej" }) {
   let failAt = null;
-  const kid = S.mode === "kid";
   const my = screenToken;
   app.innerHTML = `
     <div class="label">Weryfikacja</div>
@@ -1163,8 +1131,8 @@ function verifyUI({ url, file, title, room, checks, aiCheck, onPass, onFail, fai
       <div class="card test-panel" style="margin-top:16px">
         <div class="label">${AI.live ? "Decyzja ręczna" : "Tryb testowy"}</div>
         <p style="font-weight:700;margin:6px 0 14px">${AI.live
-          ? (kid ? "Rodzic może zatwierdzić ręcznie:" : "Albo zdecyduj ręcznie:")
-          : `Prawdziwe AI działa w wersji na claude.ai. ${kid ? "Rodzic decyduje" : "Wybierz"}, jaki ma być wynik:`}</p>
+          ? "Albo zdecyduj ręcznie:"
+          : "AI nie jest podłączone. Wybierz, jaki ma być wynik:"}</p>
         ${checks && checks.length > 1
           ? `<div class="checks">${checks.map((c) => `<button class="chk" data-ci="${c.i}"><i>✓</i>${esc(c.label)}</button>`).join("")}</div>`
           : ""}
@@ -1234,7 +1202,7 @@ SCREENS.verify = ({ url, file }) => {
     checks: pending.map((i) => ({ i, label: checkLabel(mission.checks[i]) })),
     aiCheck: async (comment) => {
       const r = await AI.verifyMission({
-        roomName: ROOMS[ses.room].name, mode: S.mode, mission, pending, before: photoMemory.before, after: file,
+        roomName: ROOMS[ses.room].name, mission, pending, before: photoMemory.before, after: file,
         comment, notes: roomNotes(ses.room),
       });
       return { passed: r.done.length > 0, done: r.done, message: r.message };
@@ -1269,7 +1237,7 @@ SCREENS.verify = ({ url, file }) => {
       go("missionResult", { pts, ms, msg, cat: mission.cat });
     },
     onFail: (msg, failAt) => {
-      ses.failMsg = msg || rand(FAIL_MSG[S.mode]);
+      ses.failMsg = msg || rand(FAIL_MSG);
       ses.okMsg = "";
       // stoper rusza dalej – liczy też czas spędzony na ekranie odrzucenia
       ses.startedAt = failAt || Date.now();
@@ -1372,7 +1340,7 @@ SCREENS.clean = (params = {}) => {
       if (hash && S.photoHashes.includes(hash)) {
         return { passed: false, message: "To zdjęcie było już użyte. Zrób nowe." };
       }
-      return AI.verifyClean({ roomName: r.name, mode: S.mode, photo: file, comment, notes: roomNotes(room) });
+      return AI.verifyClean({ roomName: r.name, photo: file, comment, notes: roomNotes(room) });
     },
     onPass: (msg) => {
       const k = dayKey();
@@ -1554,14 +1522,6 @@ SCREENS.settings = () => {
       <input class="input" id="name" maxlength="20" value="${esc(S.name)}">
     </div>
     <div class="card">
-      <div class="label">Tryb</div>
-      <div class="seg" style="margin-top:8px">
-        <button data-mode="adult" class="${S.mode === "adult" ? "active" : ""}">🧑 Dorosły</button>
-        <button data-mode="kid" class="${S.mode === "kid" ? "active" : ""}">🧒 Dziecko</button>
-      </div>
-      <p class="hint" style="text-align:left">Tryb dziecka: prostsze misje, większe napisy, łagodniejsze komunikaty, rodzic zatwierdza wynik.</p>
-    </div>
-    <div class="card">
       <div class="label">Sztuczna inteligencja</div>
       <p style="font-weight:700;margin:8px 0 0">${!AI.live
         ? "🧪 Tryb testowy: AI nie jest podłączone, wynik sprawdzania wybierasz ręcznie."
@@ -1610,7 +1570,6 @@ SCREENS.settings = () => {
   if (DEV_TOOLS) bindDevTools();
   $("#name").onchange = (e) => { S.name = e.target.value.trim() || "Graczu"; save(); toast("Zapisano"); };
   if ($("#installBtn2")) $("#installBtn2").onclick = installGuide;
-  app.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => { S.mode = b.dataset.mode; save(); go("settings"); }));
   app.querySelectorAll(".note-del").forEach((b) => (b.onclick = () => {
     const list = roomNotes(b.dataset.room).slice();
     list.splice(+b.dataset.i, 1);

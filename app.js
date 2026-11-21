@@ -656,52 +656,118 @@ let installEvent = null; // Android/Chrome: systemowe okno instalacji
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   installEvent = e;
-  if (currentScreen === "home" || currentScreen === "settings") go(currentScreen);
+  if (GATED) showInstallGate();
+  else if (currentScreen === "home" || currentScreen === "settings") go(currentScreen);
 });
-window.addEventListener("appinstalled", () => { installEvent = null; toast("📲 Zainstalowano CLEAN QUEST!"); });
+window.addEventListener("appinstalled", () => {
+  installEvent = null;
+  if (GATED) showInstallGate(true);
+  else toast("📲 Zainstalowano CLEAN QUEST!");
+});
 function isStandalone() { return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true; }
 function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
+function isMobile() { return isIOS() || /android|mobile/i.test(navigator.userAgent); }
 function canOfferInstall() { return !window.claude && !isStandalone(); }
 
-const SHARE_ICON = `<svg class="ios-share" viewBox="0 0 24 24" aria-label="ikona Udostępnij"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-function installGuide() {
-  if (installEvent) { // Android: od razu systemowe okno „Zainstaluj”
-    const ev = installEvent;
-    installEvent = null;
-    ev.prompt();
-    return;
+// Gra działa tylko po zainstalowaniu (z ikony na ekranie). W przeglądarce – ekran instalacji.
+// Wyjątki: wersja na claude.ai oraz adres z ?przegladarka (do testów).
+function browserAllowed() {
+  try {
+    if (new URLSearchParams(location.search).has("przegladarka")) sessionStorage.setItem("cq-browser", "1");
+    return sessionStorage.getItem("cq-browser") === "1";
+  } catch (e) {
+    return false;
   }
-  const ios = `<ol class="install-steps">
+}
+const GATED = canOfferInstall() && !browserAllowed();
+
+const SHARE_ICON = `<svg class="ios-share" viewBox="0 0 24 24" aria-label="ikona Udostępnij"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M6 11H5v10h14V11h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const INSTALL_STEPS = {
+  ios: `<ol class="install-steps">
       <li>Otwórz tę stronę w <b>Safari</b>.</li>
       <li>Stuknij <b>Udostępnij</b> ${SHARE_ICON} na dolnym pasku. W nowszym iOS najpierw stuknij <b>„⋯”</b>.</li>
       <li>Przewiń listę albo stuknij <b>„Więcej”</b> i wybierz <b>„Do ekranu początkowego”</b>.</li>
       <li>Zostaw włączone <b>„Otwórz jako aplikację”</b> i stuknij <b>Dodaj</b>.</li>
-    </ol>`;
-  const android = `<ol class="install-steps">
+    </ol>`,
+  android: `<ol class="install-steps">
       <li>Otwórz tę stronę w <b>Chrome</b>.</li>
       <li>Stuknij <b>⋮</b> w prawym górnym rogu.</li>
       <li>Wybierz <b>„Zainstaluj aplikację”</b> albo <b>„Dodaj do ekranu głównego”</b>.</li>
       <li>Potwierdź: <b>Zainstaluj</b>.</li>
     </ol>
-    <p class="hint">Samsung Internet: ☰ → „Dodaj stronę do” → „Ekran startowy”.</p>`;
-  const onIOS = isIOS();
+    <p class="hint">Samsung Internet: ☰ → „Dodaj stronę do” → „Ekran startowy”.</p>`,
+  desktop: `<ol class="install-steps">
+      <li>Otwórz tę stronę w <b>Chrome</b> albo <b>Edge</b>.</li>
+      <li>Kliknij ikonę instalacji na końcu paska adresu (monitor ze strzałką) albo menu <b>⋮ → „Zainstaluj CLEAN QUEST”</b>.</li>
+      <li>Potwierdź: <b>Zainstaluj</b>.</li>
+    </ol>
+    <p class="hint">Najwygodniej grać na telefonie – zdjęcia robisz od razu aparatem.</p>`,
+};
+function defaultOS() { return isIOS() ? "ios" : isMobile() ? "android" : "desktop"; }
+function osTabs(active) {
+  return `<div class="seg" style="margin:12px 0">
+    ${[["ios", "iPhone"], ["android", "Android"], ["desktop", "Komputer"]]
+      .map(([k, l]) => `<button data-os="${k}" class="${k === active ? "active" : ""}">${l}</button>`).join("")}
+  </div>`;
+}
+function bindOsTabs(root) {
+  root.querySelectorAll("[data-os]").forEach((b) => (b.onclick = () => {
+    root.querySelectorAll("[data-os]").forEach((x) => x.classList.toggle("active", x === b));
+    $("#steps", root).innerHTML = INSTALL_STEPS[b.dataset.os];
+  }));
+}
+
+function installGuide() {
+  if (installEvent) { // Android/Chrome: od razu systemowe okno „Zainstaluj”
+    const ev = installEvent;
+    installEvent = null;
+    ev.prompt();
+    return;
+  }
+  const os = defaultOS();
   openSheet(`
     <div style="font-size:48px">📲</div>
     <h2>Zainstaluj CLEAN QUEST</h2>
     <p class="muted" style="font-weight:700">Ikona pojawi się na ekranie telefonu, a aplikacja otworzy się jak zwykła apka – bez sklepu.</p>
-    <div class="seg" style="margin:12px 0">
-      <button data-os="ios" class="${onIOS ? "active" : ""}">iPhone</button>
-      <button data-os="android" class="${onIOS ? "" : "active"}">Android</button>
-    </div>
-    <div id="steps">${onIOS ? ios : android}</div>
+    ${osTabs(os)}
+    <div id="steps">${INSTALL_STEPS[os]}</div>
     <button class="btn" id="ok">Rozumiem</button>`,
-  (m) => {
-    m.querySelectorAll("[data-os]").forEach((b) => (b.onclick = () => {
-      m.querySelectorAll("[data-os]").forEach((x) => x.classList.toggle("active", x === b));
-      $("#steps", m).innerHTML = b.dataset.os === "ios" ? ios : android;
-    }));
-    $("#ok", m).onclick = closeSheet;
-  });
+  (m) => { bindOsTabs(m); $("#ok", m).onclick = closeSheet; });
+}
+
+// Ekran zamiast gry, gdy aplikacja jest otwarta w przeglądarce.
+function showInstallGate(installed = false) {
+  document.body.classList.add("gated");
+  const os = defaultOS();
+  app.innerHTML = `
+    <div class="gate">
+      <div class="gate-hero">${creatureSVG(3)}</div>
+      <h1>CLEAN<span>QUEST</span></h1>
+      <p class="gate-lead">Sprzątanie jako gra: AI układa misje, Ty zdobywasz punkty, odznaki i rozwijasz stworka.</p>
+      ${installed ? `
+        <div class="card gate-done">
+          <div style="font-size:40px">🎉</div>
+          <h2>Zainstalowano!</h2>
+          <p style="font-weight:700">Zamknij przeglądarkę i otwórz <b>CLEAN QUEST</b> z ikony na ekranie telefonu.</p>
+        </div>` : `
+        <div class="card">
+          <h2 style="font-size:24px">📲 Najpierw zainstaluj aplikację</h2>
+          <p class="muted" style="font-weight:700;margin:6px 0 0">Gra działa po dodaniu jej do ekranu telefonu – za darmo, bez sklepu, w minutę.</p>
+          ${installEvent ? `<button class="btn" id="gateInstall" style="margin-top:14px">Zainstaluj</button>
+            <p class="hint">albo zrób to ręcznie:</p>` : ""}
+          ${osTabs(os)}
+          <div id="steps">${INSTALL_STEPS[os]}</div>
+          <p class="hint">Po instalacji uruchamiaj CLEAN QUEST z ikony na ekranie.</p>
+          <p class="hint">Link otworzył się w Messengerze, Instagramie lub innej aplikacji? Wybierz w jej menu
+            „Otwórz w przeglądarce” (Safari na iPhonie, Chrome na Androidzie).</p>
+        </div>`}
+    </div>`;
+  bindOsTabs(app);
+  if ($("#gateInstall")) $("#gateInstall").onclick = () => {
+    const ev = installEvent;
+    installEvent = null;
+    if (ev) ev.prompt();
+  };
 }
 
 /* ============ ROUTER ============ */
@@ -1592,26 +1658,30 @@ function bindDevTools() {
 
 /* ============ START ============ */
 
-go(S.session ? "mission" : "home");
+if (GATED) {
+  showInstallGate(); // w przeglądarce: tylko ekran instalacji
+} else {
+  go(S.session ? "mission" : "home");
 
-// Najpierw wczytujemy stan z chmury (jeśli nowszy), potem sprawdzamy opuszczone dni.
-const refreshHome = () => { if (currentScreen === "home") go("home"); };
-cloudInit().then((changed) => {
-  if (changed && !FLOW_SCREENS.has(currentScreen)) go(S.session ? "mission" : currentScreen);
-  else if (changed && S.session && currentScreen === "mission") go("mission");
-  else renderHeader();
-  processMissedDays(refreshHome);
-});
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) cloudSave(true); // wychodzisz z aplikacji – zapisz od razu
-  else processMissedDays(refreshHome);
-});
-window.addEventListener("pagehide", () => cloudSave(true));
+  // Najpierw wczytujemy stan z chmury (jeśli nowszy), potem sprawdzamy opuszczone dni.
+  const refreshHome = () => { if (currentScreen === "home") go("home"); };
+  cloudInit().then((changed) => {
+    if (changed && !FLOW_SCREENS.has(currentScreen)) go(S.session ? "mission" : currentScreen);
+    else if (changed && S.session && currentScreen === "mission") go("mission");
+    else renderHeader();
+    processMissedDays(refreshHome);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) cloudSave(true); // wychodzisz z aplikacji – zapisz od razu
+    else processMissedDays(refreshHome);
+  });
+  window.addEventListener("pagehide", () => cloudSave(true));
 
-// Gdy okaże się, że AI jest dostępne, odśwież ekrany, które o nim informują.
-AI.ready.then(() => {
-  if (AI.live && (currentScreen === "home" || currentScreen === "settings" || currentScreen === "mission")) go(currentScreen);
-});
+  // Gdy okaże się, że AI jest dostępne, odśwież ekrany, które o nim informują.
+  AI.ready.then(() => {
+    if (AI.live && (currentScreen === "home" || currentScreen === "settings" || currentScreen === "mission")) go(currentScreen);
+  });
+}
 
 // Service worker tylko w wersji „na własnym serwerze” (GitHub Pages). Na claude.ai nie działa.
 if ("serviceWorker" in navigator && !window.claude && location.protocol === "https:") {

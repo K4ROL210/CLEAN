@@ -178,6 +178,18 @@ body.flow .bottomnav { display: none; }
 .note-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-weight: 700; }
 .note-row span { flex: 1; min-width: 0; }
 .note-del { width: 30px; height: 30px; border-radius: 50%; background: #FFEBEE; color: var(--red-dark); font-weight: 800; flex: none; }
+/* ekran instalacji (gra otwarta w przeglądarce) */
+body.gated { padding-bottom: 24px; }
+body.gated .topbar, body.gated .bottomnav { display: none; }
+.gate { text-align: center; padding-top: calc(12px + env(safe-area-inset-top)); }
+.gate-hero { width: 150px; margin: 0 auto; animation: bob 2.4s ease-in-out infinite; }
+.gate h1 { font-size: 40px; letter-spacing: .5px; }
+.gate h1 span { color: var(--green); margin-left: 6px; }
+.gate-lead { font-weight: 700; color: var(--muted); max-width: 34ch; margin: 8px auto 18px; }
+.gate .card { text-align: left; }
+.gate .seg button { font-size: 14px; padding: 10px 6px; }
+.gate-done { text-align: center !important; background: #E8F7EF; border-color: #BFE8D2; }
+
 /* instalacja */
 .install-card { display: flex; align-items: center; gap: 12px; background: #EEF4FF; border-color: #CFDDFB; }
 .install-card .big { font-size: 36px; }

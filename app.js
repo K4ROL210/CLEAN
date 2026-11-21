@@ -1528,6 +1528,7 @@ SCREENS.settings = () => {
         <tr><td>Najdłuższa passa</td><td>${S.bestStreak}</td></tr>
       </table>
     </div>
+    ${DEV_TOOLS ? `
     <div class="card test-panel">
       <div class="label">Narzędzia testowe</div>
       <p class="hint" style="text-align:left">Data w grze: ${fmtDay(dayKey())}${S.dayOffset ? ` (+${S.dayOffset} ${dni(S.dayOffset)} testowo)` : ""}
@@ -1535,8 +1536,36 @@ SCREENS.settings = () => {
       <div class="row"><button class="btn ghost" id="dayPlus">➕ Dzień passy</button><button class="btn ghost" id="dayMiss">➖ Opuść dzień</button></div>
       <button class="btn ghost" id="lvlPlus">🐾 +1 poziom stworka</button>
       <button class="btn ghost" id="add">+200 ⭐ i +200 w każdej kategorii</button>
+    </div>` : ""}
+    <div class="card">
+      <div class="label">Dane</div>
+      <p class="hint" style="text-align:left;margin:6px 0 12px">Usuwa punkty, odznaki, passę i stworka na tym urządzeniu.</p>
       <button class="btn red" id="reset">Wyczyść cały postęp</button>
     </div>`;
+  if (DEV_TOOLS) bindDevTools();
+  $("#name").onchange = (e) => { S.name = e.target.value.trim() || "Graczu"; save(); toast("Zapisano"); };
+  if ($("#installBtn2")) $("#installBtn2").onclick = installGuide;
+  app.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => { S.mode = b.dataset.mode; save(); go("settings"); }));
+  app.querySelectorAll(".note-del").forEach((b) => (b.onclick = () => {
+    const list = roomNotes(b.dataset.room).slice();
+    list.splice(+b.dataset.i, 1);
+    S.roomNotes = Object.assign({}, S.roomNotes, { [b.dataset.room]: list });
+    save();
+    go("settings");
+  }));
+  $("#reset").onclick = () => openSheet(`
+      <h2>Wyczyścić postęp?</h2>
+      <p class="muted" style="font-weight:700">Punkty, odznaki, passa i stworek wrócą do zera.</p>
+      <div class="row"><button class="btn ghost" id="no">Anuluj</button><button class="btn red" id="yes">Wyczyść</button></div>`,
+    (m) => {
+      $("#no", m).onclick = closeSheet;
+      $("#yes", m).onclick = () => { S = freshState(); save(); closeSheet(); go("home"); };
+    });
+};
+
+// Narzędzia testowe (przesuwanie dni, poziomy, punkty). Włączasz je, ustawiając DEV_TOOLS = true.
+const DEV_TOOLS = false;
+function bindDevTools() {
   // ➕: dzisiejszy dzień zaliczony; jeśli już był – przeskakujemy do jutra i zaliczamy jutro.
   $("#dayPlus").onclick = () => {
     if (activeToday()) S.dayOffset = (S.dayOffset || 0) + 1;
@@ -1558,30 +1587,12 @@ SCREENS.settings = () => {
     go("settings");
     evolveAnimation(from, S.avatarLevel);
   };
-  $("#name").onchange = (e) => { S.name = e.target.value.trim() || "Graczu"; save(); toast("Zapisano"); };
-  if ($("#installBtn2")) $("#installBtn2").onclick = installGuide;
-  app.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => { S.mode = b.dataset.mode; save(); go("settings"); }));
   $("#add").onclick = () => {
     Object.keys(BADGE_CATEGORIES).forEach((c) => addCatPoints(c, 200));
     addPoints(200);
     toast("+200 ⭐ i +200 w każdej kategorii (test)");
   };
-  app.querySelectorAll(".note-del").forEach((b) => (b.onclick = () => {
-    const list = roomNotes(b.dataset.room).slice();
-    list.splice(+b.dataset.i, 1);
-    S.roomNotes = Object.assign({}, S.roomNotes, { [b.dataset.room]: list });
-    save();
-    go("settings");
-  }));
-  $("#reset").onclick = () => openSheet(`
-      <h2>Wyczyścić postęp?</h2>
-      <p class="muted" style="font-weight:700">Punkty, odznaki, passa i stworek wrócą do zera.</p>
-      <div class="row"><button class="btn ghost" id="no">Anuluj</button><button class="btn red" id="yes">Wyczyść</button></div>`,
-    (m) => {
-      $("#no", m).onclick = closeSheet;
-      $("#yes", m).onclick = () => { S = freshState(); save(); closeSheet(); go("home"); };
-    });
-};
+}
 
 /* ============ START ============ */
 

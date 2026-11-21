@@ -1565,8 +1565,13 @@ SCREENS.settings = () => {
       <div class="row"><button class="btn ghost" id="dayPlus">➕ Dzień passy</button><button class="btn ghost" id="dayMiss">➖ Opuść dzień</button></div>
       <button class="btn ghost" id="lvlPlus">🐾 +1 poziom stworka</button>
       <button class="btn ghost" id="add">+200 ⭐ i +200 w każdej kategorii</button>
-      <button class="btn red" id="reset">Wyczyść cały postęp</button>
-    </div>` : ""}`;
+    </div>` : ""}
+    <div class="card">
+      <div class="label">Dane</div>
+      <p class="hint" style="text-align:left;margin:6px 0 12px">Usuwa wszystkie postępy na tym urządzeniu: punkty, odznaki, passę,
+        stworka i zapamiętane uwagi. Tego nie da się cofnąć.</p>
+      <button class="btn red" id="reset">🗑️ Usuń postępy</button>
+    </div>`;
   if (DEV_TOOLS) bindDevTools();
   $("#name").onchange = (e) => { S.name = e.target.value.trim() || "Graczu"; save(); toast("Zapisano"); };
   if ($("#installBtn2")) $("#installBtn2").onclick = installGuide;
@@ -1578,9 +1583,10 @@ SCREENS.settings = () => {
     go("settings");
   }));
   if ($("#reset")) $("#reset").onclick = () => openSheet(`
-      <h2>Wyczyścić postęp?</h2>
-      <p class="muted" style="font-weight:700">Punkty, odznaki, passa i stworek wrócą do zera.</p>
-      <div class="row"><button class="btn ghost" id="no">Anuluj</button><button class="btn red" id="yes">Wyczyść</button></div>`,
+      <div style="font-size:48px">⚠️</div>
+      <h2>Usunąć wszystkie postępy?</h2>
+      <p class="muted" style="font-weight:700">Punkty, odznaki, passa i stworek wrócą do zera na tym urządzeniu. Tego nie da się cofnąć.</p>
+      <div class="row"><button class="btn ghost" id="no">Anuluj</button><button class="btn red" id="yes">Usuń</button></div>`,
     (m) => {
       $("#no", m).onclick = closeSheet;
       $("#yes", m).onclick = () => { S = freshState(); save(); closeSheet(); go("home"); };

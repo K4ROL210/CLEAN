@@ -275,8 +275,10 @@ body.gated .topbar, body.gated .bottomnav { display: none; }
   display: grid; place-items: center; background: var(--green); color: #fff;
   font-family: var(--font-head); font-weight: 800;
 }
-.mission-list li.done::before, .mission-list li.ok::before { content: "✓"; background: var(--green-dark); }
-.mission-list li.done { color: var(--muted); text-decoration: line-through; }
+.mission-list li.ok::before { content: "✓"; background: var(--green-dark); }
+.mission-list li.done::before { background: var(--muted); }
+.mission-list li.done { color: var(--muted); }
+.mission-list li.done span { text-decoration: line-through; }
 
 /* ---------- mission ---------- */
 .mission-head { display: flex; justify-content: space-between; align-items: center; }
@@ -411,3 +413,12 @@ body.gated .topbar, body.gated .bottomnav { display: none; }
 .mission-list.tick li { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .remarks { margin: 8px 0 0; padding-left: 20px; text-align: left; }
 .remarks li { margin: 2px 0; }
+button.photo-countdown { border: 0; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,.25); }
+button.photo-countdown:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(0,0,0,.25); }
+.mission-list li .box {
+  flex: none; margin-left: auto; width: 30px; height: 30px; border-radius: 8px;
+  border: 3px solid var(--green); background: #fff; display: grid; place-items: center;
+  color: #fff; font-size: 18px; font-weight: 800; text-decoration: none;
+}
+.mission-list li.done .box { background: var(--green-dark); border-color: var(--green-dark); }
+.mission-list li.done .box::after { content: "✓"; }

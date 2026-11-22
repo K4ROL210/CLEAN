@@ -1006,7 +1006,7 @@ SCREENS.mission = () => {
   if (!ses) return go("home");
   if (ses.passed) return go("summary");
   if (ses.stoppedAt) return go("finish");
-  if (!ses.startedAt && ses.acc > 0) { ses.startedAt = Date.now(); save(); } // np. odświeżenie w trakcie sprawdzania
+  if (!ses.startedAt && !ses.readyAt && ses.acc > 0) { ses.startedAt = Date.now(); save(); } // np. odświeżenie w trakcie sprawdzania
   const r = ROOMS[ses.room];
   const running = !!ses.startedAt;
   if (!running) {
@@ -1029,16 +1029,16 @@ SCREENS.mission = () => {
       <div class="t" id="t">00:00</div>
       <div class="now-pts" id="nowPts"></div>
       <div class="next-pts" id="nextPts"></div>
-      ${running ? "" : `<div class="photo-countdown ready" id="rd"></div>`}
+      ${running ? "" : `<button class="photo-countdown ready" id="rd"></button>`}
     </div>
     <div class="card"><ol class="mission-list tick">${ses.missions.map((m, i) => `
-      <li class="${ses.done[i] ? "done" : ""}" data-mi="${i}"><span>${esc(m.text)}
-        <br><small class="muted">${catIcon(m.cat)} ${esc(BADGE_CATEGORIES[m.cat].label)}</small></span></li>`).join("")}</ol></div>
-    <p class="hint">Odhaczaj zadania, jak chcesz – bez zdjęć. Na koniec zrób 1–${MAX_FINAL_SHOTS} zdjęcia całego pomieszczenia,
+      <li class="${ses.done[i] ? "done" : ""}" data-mi="${i}" role="checkbox" aria-checked="${ses.done[i]}"><span>${esc(m.text)}
+        <br><small class="muted">${catIcon(m.cat)} ${esc(BADGE_CATEGORIES[m.cat].label)}</small></span><b class="box"></b></li>`).join("")}</ol></div>
+    <p class="hint">Kliknij kwadracik, żeby odhaczyć zadanie – bez zdjęć. Na koniec zrób 1–${MAX_FINAL_SHOTS} zdjęcia całego pomieszczenia,
       a AI sprawdzi, czy jest posprzątane.</p>
     ${running
       ? `<button class="btn yellow" id="finish">✓ Skończone – zrób zdjęcia</button>`
-      : `<button class="btn" id="start">▶ Start teraz</button>`}
+      : `<button class="btn" id="start">▶ ${ses.acc > 0 ? "Wznów stoper teraz" : "Start teraz"}</button>`}
     <button class="linkbtn" id="abort">Przerwij sprzątanie</button>`;
 
   const update = () => {
@@ -1053,7 +1053,7 @@ SCREENS.mission = () => {
       const left = readyTimeLeft(ses);
       if (left <= 0) return autoStart(ses);
       const s = Math.ceil(left / 1000);
-      rd.textContent = `⏳ Stoper ruszy za ${s} s`;
+      rd.textContent = `▶ Stoper ruszy za ${s} s`;
       rd.classList.toggle("urgent", s <= 3);
     }
   };
@@ -1064,10 +1064,13 @@ SCREENS.mission = () => {
     const i = +li.dataset.mi;
     ses.done[i] = !ses.done[i];
     li.classList.toggle("done", ses.done[i]);
+    li.setAttribute("aria-checked", ses.done[i]);
     save();
     app.querySelector(".mission-head .label:last-child").textContent = `✓ ${ses.done.filter(Boolean).length}/${n}`;
   }));
-  if ($("#start")) $("#start").onclick = () => { ses.startedAt = Date.now(); ses.readyAt = null; save(); go("mission"); };
+  const startNow = () => { ses.startedAt = Date.now(); ses.readyAt = null; save(); go("mission"); };
+  if ($("#start")) $("#start").onclick = startNow;
+  if ($("#rd")) $("#rd").onclick = startNow;
   if ($("#finish")) $("#finish").onclick = () => {
     ses.acc = elapsed(ses);
     ses.startedAt = null;
@@ -1104,7 +1107,7 @@ SCREENS.finish = () => {
     <div class="timer paused">
       <div class="label" style="color:#CBD5E1">Twój czas (stoi)</div>
       <div class="t">${fmtTime(ses.acc)}</div>
-      <div class="photo-countdown" id="cd"></div>
+      <button class="photo-countdown" id="cd"></button>
     </div>
     <p class="muted" style="font-weight:700">Zrób 1–${MAX_FINAL_SHOTS} zdjęcia pomieszczenia z różnych stron – najlepiej tych samych miejsc co na początku.</p>
     ${k < MAX_FINAL_SHOTS ? `<button class="btn ${k ? "ghost" : "yellow glow"}" id="shot">📷 ${k ? `Dodaj zdjęcie (${k}/${MAX_FINAL_SHOTS})` : "Zrób zdjęcie"}</button>` : ""}
@@ -1117,7 +1120,7 @@ SCREENS.finish = () => {
     const left = photoTimeLeft(ses);
     if (left <= 0) return autoResume(ses);
     const s = Math.ceil(left / 1000);
-    $("#cd").textContent = `📷 ${k ? "Następne zdjęcie albo SPRAWDŹ" : "Zrób zdjęcie"}: ${s} s`;
+    $("#cd").textContent = `${k >= MAX_FINAL_SHOTS ? "🔍 Sprawdź" : k ? "📷 Kolejne zdjęcie" : "📷 Zrób zdjęcie"}: ${s} s`;
     $("#cd").classList.toggle("urgent", s <= 3);
   };
   update();
@@ -1138,6 +1141,7 @@ SCREENS.finish = () => {
     go("verify");
   };
   if ($("#shot")) $("#shot").onclick = () => takePhoto(accept);
+  $("#cd").onclick = () => (k >= MAX_FINAL_SHOTS ? check() : takePhoto(accept));
   if ($("#check")) $("#check").onclick = check;
   if ($("#noPhoto")) $("#noPhoto").onclick = check;
   if ($("#undo")) $("#undo").onclick = () => { photoMemory.after.pop(); go("finish"); };
@@ -1245,7 +1249,7 @@ SCREENS.verify = () => {
     hasPhoto: files.length > 0,
     title: `${ROOMS[ses.room].name} – sprawdzam`,
     room: ses.room,
-    failLabel: "🧹 Poprawiam (stoper rusza)",
+    failLabel: "🧹 Poprawiam",
     aiCheck: (comment) => AI.verifyRoom({
       roomName: ROOMS[ses.room].name, missions: ses.missions, before: photoMemory.before || [], after: files,
       comment, notes: roomNotes(ses.room),
@@ -1272,8 +1276,9 @@ SCREENS.verify = () => {
       ses.remarks = (res && res.remarks) || [];
       // zadania, które AI uznało za niezrobione, wracają na listę jako nieodhaczone
       ((res && res.remaining) || []).forEach((i) => { if (i >= 0 && i < ses.done.length) ses.done[i] = false; });
-      // stoper rusza dalej – liczy też czas spędzony na ekranie odrzucenia
-      ses.startedAt = failAt || Date.now();
+      // 30 s na przeczytanie uwag, potem stoper rusza sam (dotychczasowy czas zostaje)
+      ses.startedAt = null;
+      ses.readyAt = Date.now();
       ses.stoppedAt = null;
       photoMemory.after = [];
       save();

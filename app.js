@@ -1,4 +1,4 @@
-// CLEAN QUEST – sprzątanie jako gra. AI (Claude) układa misje ze zdjęć i sprawdza zdjęcia kontrolne.
+// CLEAN QUEST – sprzątanie jako gra. AI (Claude) układa zadania ze zdjęć, a na koniec sprawdza zdjęcia posprzątanego pomieszczenia.
 "use strict";
 
 /* ============ DANE ============ */
@@ -113,7 +113,16 @@ function normalize(raw) {
   }
   if (!s.peakLevel || s.peakLevel < s.avatarLevel) s.peakLevel = s.avatarLevel;
   delete s.mode; // dawny przełącznik dorosły/dziecko – jest już jeden tryb
-  if (s.session) s.session.missions = s.session.missions.map(missionOf);
+  if (s.session) {
+    const ses = s.session;
+    ses.missions = ses.missions.map(missionOf);
+    // starszy zapis (misje po kolei, każda ze zdjęciem) → jedna lista z jednym stoperem
+    if (!Array.isArray(ses.done) || ses.done.length !== ses.missions.length) {
+      ses.done = ses.missions.map((_, i) => i < (ses.idx || 0));
+      ses.stoppedAt = null;
+    }
+    if (!Array.isArray(ses.remarks)) ses.remarks = [];
+  }
   return s;
 }
 function load() {
@@ -176,16 +185,13 @@ async function cloudInit() {
     return false;
   }
 }
-
-// Misja = {text, checks: [{where, check}]} – każdy punkt (miejsce) można zaliczyć osobnym zdjęciem.
-// Starsze zapisy (sam tekst albo {text, check}) zamieniamy na ten kształt.
+// Zadanie = {text, cat}. Starsze zapisy (sam tekst albo z punktami do zdjęć) zamieniamy na ten kształt.
 function missionOf(m) {
   if (typeof m === "string") m = { text: m };
-  if (!Array.isArray(m.checks) || !m.checks.length) m.checks = [{ where: "", check: m.check || m.text }];
+  m = { text: m.text, cat: m.cat };
   if (!TASK_CATEGORIES.includes(m.cat)) m.cat = guessCategory(m.text);
   return m;
 }
-function checkLabel(c) { return c.where || c.check; }
 
 /* ---- punkty kategorii (do kupowania odznak) ---- */
 function catIcon(cat) { return (BADGE_CATEGORIES[cat] || {}).icon || "⭐"; }
@@ -744,7 +750,7 @@ function showInstallGate(installed = false) {
 
 /* ============ ROUTER ============ */
 
-const FLOW_SCREENS = new Set(["room", "mission", "verify", "missionResult", "summary", "clean"]);
+const FLOW_SCREENS = new Set(["room", "mission", "finish", "verify", "summary", "clean"]);
 let tick = null;
 let currentScreen = "home";
 let screenToken = 0; // rośnie przy każdej zmianie ekranu – spóźniona odpowiedź AI nie nadpisze nowego ekranu
@@ -939,43 +945,48 @@ SCREENS.room = ({ room }) => {
     $("#back").onclick = () => go("home");
   };
 
+  // Lista zadań pojawia się od razu razem z odliczaniem – nie trzeba niczego zatwierdzać.
   const showMissions = (missions, comment) => {
-    app.innerHTML = `${head(`${missions.length} misji do zrobienia`, "Plan sprzątania")}
-      ${shots.length ? `<div class="shots small">${shots.map((s) => `<div class="photo"><img src="${s.url}" alt=""></div>`).join("")}</div>` : ""}
-      ${comment ? `<p style="font-weight:700"><span class="ai-chip">AI</span>${esc(comment)}</p>` : ""}
-      <div class="card"><ol class="mission-list">${missions.map((m) => `<li><span>${esc(m.text)}
-        <br><small class="muted">${catIcon(m.cat)} ${esc(BADGE_CATEGORIES[m.cat].label)}${m.checks.length > 1
-          ? ` · 📷 ${m.checks.map((c) => esc(checkLabel(c))).join(" · ")}` : ""}</small></span></li>`).join("")}</ol></div>
-      <p class="hint">Każda misja ma stoper. Im szybciej (i porządniej), tym więcej punktów – do 9 za misję.
-        Punkty trafiają też do kategorii misji – za nie kupisz pasujące odznaki.<br>
-        Po zatwierdzeniu masz ${READY_MS / 1000} s, potem stoper ruszy sam.</p>
-      <button class="btn" id="startAll">Zatwierdzam – zaczynamy!</button>
-      <button class="linkbtn" id="back">← wróć</button>`;
-    $("#startAll").onclick = () => {
-      S.session = { room, missions, idx: 0, acc: 0, startedAt: null, earned: 0, results: [], failMsg: "", readyAt: Date.now() };
-      save();
-      go("mission");
+    S.session = {
+      room, missions, done: missions.map(() => false), comment: comment || "",
+      acc: 0, startedAt: null, stoppedAt: null, readyAt: Date.now(), earned: 0, failMsg: "", remarks: [],
     };
-    $("#back").onclick = () => go("home");
+    save();
+    go("mission");
   };
   intro();
 };
 
-/* ---------- MISJA ZE STOPEREM ---------- */
-// Po zatrzymaniu stopera jest tyle czasu na dostarczenie zdjęcia. Potem stoper rusza sam
+/* ---------- SPRZĄTANIE ZE STOPEREM (jeden stoper na całe pomieszczenie) ---------- */
+// Od pojawienia się listy zadań jest tyle czasu, zanim stoper ruszy sam.
+const READY_MS = 30000;
+// Po „Skończone!” jest tyle czasu na każde zdjęcie kontrolne. Potem stoper rusza sam
 // i liczy też te sekundy – zatrzymanie stopera nie daje darmowego czasu.
-const PHOTO_WINDOW_MS = 24000;
-// Po zatwierdzeniu misji (i po każdej zaliczonej) jest tyle czasu, zanim stoper ruszy sam.
-const READY_MS = 20000;
+const PHOTO_WINDOW_MS = 30000;
+const MAX_FINAL_SHOTS = 3;
 
 function elapsed(ses) { return ses.acc + (ses.startedAt ? Date.now() - ses.startedAt : 0); }
 function photoTimeLeft(ses) { return ses.stoppedAt ? PHOTO_WINDOW_MS - (Date.now() - ses.stoppedAt) : 0; }
 function readyTimeLeft(ses) { return ses.readyAt ? READY_MS - (Date.now() - ses.readyAt) : 0; }
 
+// Punkty: jak dawniej „za misję”, tylko liczone ze średniego czasu na zadanie (do 9 pkt za zadanie).
+function sessionPoints(ses, ms) {
+  const n = Math.max(1, ses.missions.length);
+  const per = pointsFor(ms / 1000 / n);
+  return { per, total: per * n };
+}
+function sessionNextDrop(ses, ms) {
+  const n = Math.max(1, ses.missions.length);
+  const nd = nextDrop(ms / 1000 / n);
+  return nd ? { in: nd.in * n, pts: nd.pts * n } : null;
+}
+
+// Zdjęcia kontrolne trzymamy tylko w pamięci, jak zdjęcia „przed”.
+photoMemory.after = [];
+
 function autoStart(ses) {
-  ses.startedAt = ses.readyAt + READY_MS; // stoper liczy od końca 20 s, nawet jeśli strona była zamknięta
+  ses.startedAt = ses.readyAt + READY_MS; // stoper liczy od końca odliczania, nawet jeśli strona była zamknięta
   ses.readyAt = null;
-  ses.failMsg = "";
   save();
   go("mission");
 }
@@ -983,95 +994,60 @@ function autoStart(ses) {
 function autoResume(ses) {
   ses.startedAt = ses.stoppedAt || Date.now(); // czas od zatrzymania też się liczy
   ses.stoppedAt = null;
-  ses.okMsg = "";
+  photoMemory.after = [];
   ses.failMsg = `Minęło ${PHOTO_WINDOW_MS / 1000} s bez zdjęcia – stoper liczy dalej (razem z tym czasem).`;
+  ses.remarks = [];
   save();
   go("mission");
-}
-
-// Zdjęcie przyjmujemy tylko, jeśli przyszło w oknie czasowym.
-function acceptPhoto(next) {
-  const ses = S.session;
-  if (!ses || ses.startedAt || !ses.stoppedAt) {
-    toast(`Za późno – zdjęcie trzeba zrobić w ${PHOTO_WINDOW_MS / 1000} s od zatrzymania stopera`);
-    return;
-  }
-  if (photoTimeLeft(ses) < -500) return autoResume(ses); // pół sekundy tolerancji
-  ses.stoppedAt = null;
-  save();
-  next();
 }
 
 SCREENS.mission = () => {
   const ses = S.session;
   if (!ses) return go("home");
-  if (ses.idx >= ses.missions.length) return go("summary");
+  if (ses.passed) return go("summary");
+  if (ses.stoppedAt) return go("finish");
+  if (!ses.startedAt && ses.acc > 0) { ses.startedAt = Date.now(); save(); } // np. odświeżenie w trakcie sprawdzania
   const r = ROOMS[ses.room];
   const running = !!ses.startedAt;
-  const started = running || ses.acc > 0;
-  const steps = ses.missions.map((_, i) => `<i class="${i < ses.idx ? "done" : i === ses.idx ? "now" : ""}"></i>`).join("");
-  if (started && !running) {
-    if (!ses.stoppedAt) { ses.stoppedAt = Date.now(); save(); } // np. po odświeżeniu strony – nowe okno
-    if (photoTimeLeft(ses) <= 0) return autoResume(ses);
-  }
-  if (!started) {
+  if (!running) {
     if (!ses.readyAt) { ses.readyAt = Date.now(); save(); }
     if (readyTimeLeft(ses) <= 0) return autoStart(ses);
   }
-  const mission = ses.missions[ses.idx];
-  const checksDone = ses.checksDone || mission.checks.map(() => false);
-  const multi = mission.checks.length > 1;
-  const nextCheck = mission.checks.find((_, i) => !checksDone[i]);
-  const someDone = checksDone.some(Boolean);
+  const n = ses.missions.length;
+  const doneCount = ses.done.filter(Boolean).length;
 
   app.innerHTML = `
     <div class="mission-head">
-      <span class="label">${r.name} · Misja ${ses.idx + 1}/${ses.missions.length}</span>
-      <span class="label">⭐ ${ses.earned} pkt</span>
+      <span class="label">${r.name} · ${n} ${n === 1 ? "zadanie" : n < 5 ? "zadania" : "zadań"}</span>
+      <span class="label">✓ ${doneCount}/${n}</span>
     </div>
-    <div class="steps">${steps}</div>
-    ${ses.failMsg ? `<div class="alert">🔍 ${esc(ses.failMsg)}</div>` : ""}
-    ${ses.okMsg ? `<div class="alert ok">✓ ${esc(ses.okMsg)}</div>` : ""}
-    <h1 class="task">${esc(mission.text)}</h1>
-    ${multi ? `<div class="checks">
-      ${mission.checks.map((c, i) => `<div class="chk ${checksDone[i] ? "done" : ""}"><i>${checksDone[i] ? "✓" : "📷"}</i>${esc(checkLabel(c))}</div>`).join("")}
-    </div>
-    <p class="hint" style="margin-top:-6px">Każde miejsce możesz sfotografować osobno.</p>` : ""}
+    ${ses.failMsg ? `<div class="alert">🔍 ${esc(ses.failMsg)}
+      ${ses.remarks && ses.remarks.length ? `<ul class="remarks">${ses.remarks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>` : ""}
+    ${!running && ses.comment ? `<p style="font-weight:700"><span class="ai-chip">AI</span>${esc(ses.comment)}</p>` : ""}
     <div class="timer ${running ? "" : "paused"}">
       <div class="label" style="color:#CBD5E1">Twój czas</div>
       <div class="t" id="t">00:00</div>
       <div class="now-pts" id="nowPts"></div>
       <div class="next-pts" id="nextPts"></div>
-      ${started && !running ? `<div class="photo-countdown" id="cd"></div>` : ""}
-      ${!started ? `<div class="photo-countdown ready" id="rd"></div>` : ""}
+      ${running ? "" : `<div class="photo-countdown ready" id="rd"></div>`}
     </div>
-    ${!started
-      ? `<button class="btn" id="start">▶ Start teraz</button>`
-      : running
-        ? `<button class="btn red" id="stop">⏹ Zatrzymaj stoper</button>`
-        : `<button class="btn ghost" id="resume">▶ Wznów stoper</button>`}
-    <button class="btn yellow ${started && !running ? "glow" : ""}" id="check" ${started && !running ? "" : "disabled"}>📷 Sprawdź${multi && someDone && nextCheck ? `: ${esc(checkLabel(nextCheck))}` : ""}</button>
-    ${started && !running
-      ? (AI.live ? "" : `<button class="linkbtn" id="checkNoPhoto">sprawdź bez zdjęcia (test)</button>`)
-      : `<p class="hint">Przycisk SPRAWDŹ aktywuje się po zatrzymaniu stopera.</p>`}
+    <div class="card"><ol class="mission-list tick">${ses.missions.map((m, i) => `
+      <li class="${ses.done[i] ? "done" : ""}" data-mi="${i}"><span>${esc(m.text)}
+        <br><small class="muted">${catIcon(m.cat)} ${esc(BADGE_CATEGORIES[m.cat].label)}</small></span></li>`).join("")}</ol></div>
+    <p class="hint">Odhaczaj zadania, jak chcesz – bez zdjęć. Na koniec zrób 1–${MAX_FINAL_SHOTS} zdjęcia całego pomieszczenia,
+      a AI sprawdzi, czy jest posprzątane.</p>
+    ${running
+      ? `<button class="btn yellow" id="finish">✓ Skończone – zrób zdjęcia</button>`
+      : `<button class="btn" id="start">▶ Start teraz</button>`}
     <button class="linkbtn" id="abort">Przerwij sprzątanie</button>`;
 
   const update = () => {
     const ms = elapsed(ses);
-    const sec = ms / 1000;
     $("#t").textContent = fmtTime(ms);
-    const p = pointsFor(sec);
+    const p = sessionPoints(ses, ms).total;
     $("#nowPts").textContent = p > 0 ? `Teraz: ${p} pkt` : "0 pkt – ale dokończ, porządek się liczy!";
-    const nd = nextDrop(sec);
+    const nd = sessionNextDrop(ses, ms);
     $("#nextPts").textContent = nd ? `za ${fmtTime(nd.in * 1000)} spadnie do ${nd.pts} pkt` : "";
-    const cd = $("#cd");
-    if (cd) {
-      const left = photoTimeLeft(ses);
-      if (left <= 0) return autoResume(ses);
-      const s = Math.ceil(left / 1000);
-      cd.textContent = `📷 Zrób zdjęcie: ${s} s`;
-      cd.classList.toggle("urgent", s <= 3);
-    }
     const rd = $("#rd");
     if (rd) {
       const left = readyTimeLeft(ses);
@@ -1084,75 +1060,147 @@ SCREENS.mission = () => {
   update();
   tick = setInterval(update, 250);
 
-  const start = () => { ses.startedAt = Date.now(); ses.stoppedAt = null; ses.readyAt = null; ses.failMsg = ""; ses.okMsg = ""; save(); go("mission"); };
-  if ($("#start")) $("#start").onclick = start;
-  if ($("#resume")) $("#resume").onclick = start;
-  if ($("#stop")) $("#stop").onclick = () => {
+  app.querySelectorAll("[data-mi]").forEach((li) => (li.onclick = () => {
+    const i = +li.dataset.mi;
+    ses.done[i] = !ses.done[i];
+    li.classList.toggle("done", ses.done[i]);
+    save();
+    app.querySelector(".mission-head .label:last-child").textContent = `✓ ${ses.done.filter(Boolean).length}/${n}`;
+  }));
+  if ($("#start")) $("#start").onclick = () => { ses.startedAt = Date.now(); ses.readyAt = null; save(); go("mission"); };
+  if ($("#finish")) $("#finish").onclick = () => {
     ses.acc = elapsed(ses);
     ses.startedAt = null;
-    ses.stoppedAt = Date.now(); // rusza okno na zdjęcie
+    ses.stoppedAt = Date.now(); // rusza okno na zdjęcia
+    photoMemory.after = [];
     save();
-    go("mission");
+    go("finish");
   };
-  $("#check").onclick = () => takePhoto((url, file) => acceptPhoto(() => go("verify", { url, file })));
-  if ($("#checkNoPhoto")) $("#checkNoPhoto").onclick = () => acceptPhoto(() => go("verify", { url: null, file: null }));
   $("#abort").onclick = () => openSheet(`
       <h2>Przerwać sprzątanie?</h2>
-      <p class="muted" style="font-weight:700">Punkty z ukończonych misji zostają (${ses.earned} pkt).</p>
+      <p class="muted" style="font-weight:700">Punkty dostaniesz dopiero po zaliczeniu całego pomieszczenia.</p>
       <div class="row"><button class="btn ghost" id="no">Nie</button><button class="btn red" id="yes">Przerwij</button></div>`,
     (m) => {
       $("#no", m).onclick = closeSheet;
-      $("#yes", m).onclick = () => { S.session = null; save(); closeSheet(); go("home"); };
+      $("#yes", m).onclick = () => { S.session = null; photoMemory.after = []; save(); closeSheet(); go("home"); };
     });
 };
 
+/* ---------- ZDJĘCIA KONTROLNE NA KONIEC ---------- */
+SCREENS.finish = () => {
+  const ses = S.session;
+  if (!ses) return go("home");
+  if (!ses.stoppedAt) return go("mission");
+  if (photoTimeLeft(ses) <= 0) return autoResume(ses);
+  const r = ROOMS[ses.room];
+  const shots = photoMemory.after;
+  const k = shots.length;
+
+  app.innerHTML = `
+    <div class="label">Zdjęcia kontrolne · ${r.name}</div>
+    <h1 style="font-size:30px;margin:4px 0 14px">Pokaż efekt!</h1>
+    ${k ? `<div class="shots">${shots.map((s) => `<div class="photo">${s.url ? `<img src="${s.url}" alt="Zdjęcie kontrolne">` : r.emoji}</div>`).join("")}</div>`
+      : `<div class="photo">${r.emoji}</div>`}
+    <div class="timer paused">
+      <div class="label" style="color:#CBD5E1">Twój czas (stoi)</div>
+      <div class="t">${fmtTime(ses.acc)}</div>
+      <div class="photo-countdown" id="cd"></div>
+    </div>
+    <p class="muted" style="font-weight:700">Zrób 1–${MAX_FINAL_SHOTS} zdjęcia pomieszczenia z różnych stron – najlepiej tych samych miejsc co na początku.</p>
+    ${k < MAX_FINAL_SHOTS ? `<button class="btn ${k ? "ghost" : "yellow glow"}" id="shot">📷 ${k ? `Dodaj zdjęcie (${k}/${MAX_FINAL_SHOTS})` : "Zrób zdjęcie"}</button>` : ""}
+    ${k ? `<button class="btn" id="check">🔍 Sprawdź ${k} ${k === 1 ? "zdjęcie" : "zdjęcia"}</button>
+           <button class="linkbtn" id="undo">usuń ostatnie zdjęcie</button>` : ""}
+    ${AI.live || k ? "" : `<button class="linkbtn" id="noPhoto">sprawdź bez zdjęcia (test)</button>`}
+    <button class="linkbtn" id="back">▶ Jeszcze sprzątam (stoper rusza)</button>`;
+
+  const update = () => {
+    const left = photoTimeLeft(ses);
+    if (left <= 0) return autoResume(ses);
+    const s = Math.ceil(left / 1000);
+    $("#cd").textContent = `📷 ${k ? "Następne zdjęcie albo SPRAWDŹ" : "Zrób zdjęcie"}: ${s} s`;
+    $("#cd").classList.toggle("urgent", s <= 3);
+  };
+  update();
+  tick = setInterval(update, 250);
+
+  // Zdjęcie przyjmujemy tylko, jeśli przyszło w oknie czasowym; każde zdjęcie daje nowe okno.
+  const accept = (url, file) => {
+    if (S.session !== ses || !ses.stoppedAt) { toast("Za późno – stoper już ruszył"); return; }
+    if (photoTimeLeft(ses) < -500) return autoResume(ses); // pół sekundy tolerancji
+    photoMemory.after.push({ url, file });
+    ses.stoppedAt = Date.now();
+    save();
+    go("finish");
+  };
+  const check = () => {
+    ses.stoppedAt = null; // podczas sprawdzania czas stoi
+    save();
+    go("verify");
+  };
+  if ($("#shot")) $("#shot").onclick = () => takePhoto(accept);
+  if ($("#check")) $("#check").onclick = check;
+  if ($("#noPhoto")) $("#noPhoto").onclick = check;
+  if ($("#undo")) $("#undo").onclick = () => { photoMemory.after.pop(); go("finish"); };
+  $("#back").onclick = () => {
+    ses.startedAt = Date.now();
+    ses.stoppedAt = null;
+    photoMemory.after = [];
+    save();
+    go("mission");
+  };
+};
+
 /* ---------- WERYFIKACJA ZDJĘCIA ---------- */
-// aiCheck: async () => ({passed, message, done?}). Bez AI (lub po błędzie AI) – decyzja ręczna.
-// checks: [{i, label}] – niezaliczone punkty misji; przy kilku można je zatwierdzać ręcznie pojedynczo.
-// onPass(message, done) – done: lista zaliczonych punktów albo null (= wszystkie).
+// aiCheck: async (comment) => ({passed, message, ...}). Bez AI (lub po błędzie AI) – decyzja ręczna.
 // Po odrzuceniu przez AI gracz może dodać komentarz (np. "to stałe miejsce miotły") i sprawdzić ponownie.
-// onFail(message, failAt) – failAt: kiedy AI pierwszy raz odrzuciło (czas od tej chwili się liczy).
-function verifyUI({ url, file, title, room, checks, aiCheck, onPass, onFail, failLabel = "🧹 Sprzątam dalej" }) {
+// onPass(message) · onFail(message, failAt, res) – failAt: kiedy AI pierwszy raz odrzuciło (czas od tej chwili się liczy).
+function verifyUI({ urls, hasPhoto, title, room, aiCheck, onPass, onFail, failLabel = "🧹 Sprzątam dalej" }) {
   let failAt = null;
+  let lastRes = null;
   const my = screenToken;
+  const shown = (urls || []).filter(Boolean);
   app.innerHTML = `
     <div class="label">Weryfikacja</div>
     <h1 style="font-size:30px;margin:4px 0 14px">${esc(title)}</h1>
-    <div class="photo scanning" id="ph">${url ? `<img src="${url}" alt="Zdjęcie kontrolne">` : "🔍"}</div>
+    <div id="ph" class="scanning">${shown.length > 1
+      ? `<div class="shots">${shown.map((u) => `<div class="photo"><img src="${u}" alt="Zdjęcie kontrolne"></div>`).join("")}</div>`
+      : `<div class="photo">${shown.length ? `<img src="${shown[0]}" alt="Zdjęcie kontrolne">` : "🔍"}</div>`}</div>
     <div class="ai-status" id="st"><span class="ai-chip">AI</span>Sprawdzam, czy jest posprzątane…</div>
     <div id="panel"></div>`;
+  const scanning = (on) => $("#ph").querySelectorAll(".photo").forEach((p) => p.classList.toggle("scanning", on));
+  scanning(true);
 
   const manual = (errorMsg) => {
-    $("#ph").classList.remove("scanning");
+    scanning(false);
     $("#st").innerHTML = errorMsg ? "" : `<span class="ai-chip">AI</span>Gotowe.`;
     $("#panel").innerHTML = `
       ${errorMsg ? `<div class="alert">${esc(errorMsg)}</div>` : ""}
-      ${AI.live && file ? `<button class="btn" id="retry">↻ Spróbuj ponownie</button>` : ""}
+      ${AI.live && hasPhoto ? `<button class="btn" id="retry">↻ Spróbuj ponownie</button>` : ""}
       <div class="card test-panel" style="margin-top:16px">
         <div class="label">${AI.live ? "Decyzja ręczna" : "Tryb testowy"}</div>
         <p style="font-weight:700;margin:6px 0 14px">${AI.live
           ? "Albo zdecyduj ręcznie:"
           : "AI nie jest podłączone. Wybierz, jaki ma być wynik:"}</p>
-        ${checks && checks.length > 1
-          ? `<div class="checks">${checks.map((c) => `<button class="chk" data-ci="${c.i}"><i>✓</i>${esc(c.label)}</button>`).join("")}</div>`
-          : ""}
-        <div class="row"><button class="btn red" id="fail">✗ Niezaliczone</button><button class="btn" id="pass">✓ ${checks && checks.length > 1 ? "Wszystko" : "Zaliczone"}</button></div>
+        <div class="row"><button class="btn red" id="fail">✗ Niezaliczone</button><button class="btn" id="pass">✓ Zaliczone</button></div>
       </div>`;
-    $("#pass").onclick = () => onPass("", null);
-    $("#fail").onclick = () => onFail("");
-    $("#panel").querySelectorAll("[data-ci]").forEach((b) => (b.onclick = () => onPass("", [+b.dataset.ci])));
+    $("#pass").onclick = () => onPass("");
+    $("#fail").onclick = () => onFail("", null, null);
     if ($("#retry")) $("#retry").onclick = () => run();
   };
 
-  const showFail = (msg) => {
+  const showFail = (res) => {
     if (!failAt) failAt = Date.now();
-    $("#ph").classList.remove("scanning");
+    lastRes = res;
+    const msg = res.message;
+    const remarks = res.remarks || [];
+    scanning(false);
     $("#st").innerHTML = "";
     $("#panel").innerHTML = `
-      <div class="alert">🔍 ${esc(msg || "AI nie widzi tu jeszcze porządku.")}</div>
+      <div class="alert">🔍 ${esc(msg || "AI nie widzi tu jeszcze porządku.")}
+        ${remarks.length ? `<ul class="remarks">${remarks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>
       <div class="card comment-card">
         <div class="label">💬 Coś tu ma swoje stałe miejsce?</div>
-        <p class="hint" style="text-align:left;margin:6px 0 8px">Napisz to – AI oceni zdjęcie jeszcze raz, bardzo wyrozumiale,
+        <p class="hint" style="text-align:left;margin:6px 0 8px">Napisz to – AI oceni zdjęcia jeszcze raz, bardzo wyrozumiale,
           i zapamięta uwagę na przyszłość.</p>
         <textarea id="cmt" class="input" rows="3" maxlength="200"
           placeholder="Np. To jest stałe miejsce na miotłę, więc powinno być zaliczone."></textarea>
@@ -1165,21 +1213,21 @@ function verifyUI({ url, file, title, room, checks, aiCheck, onPass, onFail, fai
       if (room) addRoomNote(room, c);
       run(c);
     };
-    $("#giveup").onclick = () => onFail(msg, failAt);
+    $("#giveup").onclick = () => onFail(msg, failAt, lastRes);
   };
 
   const run = async (comment = "") => {
-    if (!AI.live || !file || !aiCheck) {
+    if (!AI.live || !hasPhoto || !aiCheck) {
       setTimeout(() => { if (screenToken === my) manual(""); }, 1500);
       return;
     }
-    $("#ph").classList.add("scanning");
+    scanning(true);
     $("#panel").innerHTML = "";
     $("#st").innerHTML = `<span class="ai-chip">AI</span>${comment ? "Sprawdzam jeszcze raz, z Twoim komentarzem…" : "Sprawdzam, czy jest posprzątane…"}`;
     try {
       const res = await aiCheck(comment);
       if (screenToken !== my) return;
-      if (res.passed) onPass(res.message, res.done || null); else showFail(res.message);
+      if (res.passed) onPass(res.message); else showFail(res);
     } catch (e) {
       if (screenToken === my) manual(AI.errorText(e));
     }
@@ -1187,104 +1235,74 @@ function verifyUI({ url, file, title, room, checks, aiCheck, onPass, onFail, fai
   run();
 }
 
-SCREENS.verify = ({ url, file }) => {
+SCREENS.verify = () => {
   const ses = S.session;
   if (!ses) return go("home");
-  const mission = ses.missions[ses.idx];
-  if (!ses.checksDone || ses.checksDone.length !== mission.checks.length) ses.checksDone = mission.checks.map(() => false);
-  const pending = mission.checks.map((_, i) => i).filter((i) => !ses.checksDone[i]);
+  const shots = photoMemory.after;
+  const files = shots.map((s) => s.file).filter(Boolean);
   verifyUI({
-    url,
-    file,
-    title: mission.text,
+    urls: shots.map((s) => s.url),
+    hasPhoto: files.length > 0,
+    title: `${ROOMS[ses.room].name} – sprawdzam`,
     room: ses.room,
-    failLabel: "🧹 Sprzątam dalej (stoper rusza)",
-    checks: pending.map((i) => ({ i, label: checkLabel(mission.checks[i]) })),
-    aiCheck: async (comment) => {
-      const r = await AI.verifyMission({
-        roomName: ROOMS[ses.room].name, mission, pending, before: photoMemory.before, after: file,
-        comment, notes: roomNotes(ses.room),
-      });
-      return { passed: r.done.length > 0, done: r.done, message: r.message };
-    },
-    onPass: (msg, done) => {
-      (done || pending).forEach((i) => (ses.checksDone[i] = true));
-      if (!ses.checksDone.every(Boolean)) {
-        // część zaliczona – stoper dalej stoi, od razu można zrobić zdjęcie kolejnego miejsca
-        const left = mission.checks.filter((_, i) => !ses.checksDone[i]).map(checkLabel);
-        ses.okMsg = msg || `Zaliczone! Zostało: ${left.join(", ")}`;
-        ses.failMsg = "";
-        ses.stoppedAt = Date.now(); // nowe okno na zdjęcie kolejnego miejsca
-        save();
-        return go("mission");
-      }
-      ses.checksDone = null;
-      ses.okMsg = "";
+    failLabel: "🧹 Poprawiam (stoper rusza)",
+    aiCheck: (comment) => AI.verifyRoom({
+      roomName: ROOMS[ses.room].name, missions: ses.missions, before: photoMemory.before || [], after: files,
+      comment, notes: roomNotes(ses.room),
+    }),
+    onPass: (msg) => {
       const ms = ses.acc;
-      const pts = pointsFor(ms / 1000);
-      ses.results.push({ mission: mission.text, ms, pts });
-      ses.earned += pts;
-      S.missionsDone++;
-      ses.idx++;
-      ses.acc = 0;
-      ses.startedAt = null;
-      ses.failMsg = "";
-      ses.readyAt = Date.now(); // 20 s do startu stopera następnej misji
-      addCatPoints(mission.cat, pts);
-      addPoints(pts);
+      const { per, total } = sessionPoints(ses, ms);
+      ses.missions.forEach((m) => addCatPoints(m.cat, per));
+      ses.done = ses.missions.map(() => true);
+      ses.passed = true;
+      ses.earned = total;
+      ses.totalMs = ms;
+      ses.per = per;
+      ses.okMsg = msg || "";
+      S.missionsDone += ses.missions.length;
+      addPoints(total);
       markActive();
+      photoMemory.after = [];
       save();
-      go("missionResult", { pts, ms, msg, cat: mission.cat });
+      go("summary");
     },
-    onFail: (msg, failAt) => {
+    onFail: (msg, failAt, res) => {
       ses.failMsg = msg || rand(FAIL_MSG);
-      ses.okMsg = "";
+      ses.remarks = (res && res.remarks) || [];
+      // zadania, które AI uznało za niezrobione, wracają na listę jako nieodhaczone
+      ((res && res.remaining) || []).forEach((i) => { if (i >= 0 && i < ses.done.length) ses.done[i] = false; });
       // stoper rusza dalej – liczy też czas spędzony na ekranie odrzucenia
       ses.startedAt = failAt || Date.now();
+      ses.stoppedAt = null;
+      photoMemory.after = [];
       save();
       go("mission");
     },
   });
 };
 
-SCREENS.missionResult = ({ pts, ms, msg, cat }) => {
-  const ses = S.session;
-  if (!ses) return go("home");
-  const last = ses.idx >= ses.missions.length;
-  app.innerHTML = `
-    <div class="result">
-      <div class="icon">${pts >= 6 ? "🚀" : pts >= 2 ? "🎉" : "👍"}</div>
-      <h1>Zaliczone!</h1>
-      <div class="gain">+${pts} pkt</div>
-      ${cat && pts ? `<p style="font-weight:800">+${pts} ${catIcon(cat)} ${esc(BADGE_CATEGORIES[cat].label)} <span class="muted">(na odznaki)</span></p>` : ""}
-      ${last ? "" : `<p class="hint">Następna misja: stoper ruszy sam ${READY_MS / 1000} s od zaliczenia.</p>`}
-      <p class="muted" style="font-weight:800">Czas: ${fmtTime(ms)}</p>
-      ${msg ? `<p style="font-weight:700"><span class="ai-chip">AI</span>${esc(msg)}</p>` : ""}
-    </div>
-    <button class="btn" id="next">${last ? "Zobacz podsumowanie" : `Następna misja (${ses.idx + 1}/${ses.missions.length})`}</button>`;
-  if (pts > 0) confetti();
-  $("#next").onclick = () => go(last ? "summary" : "mission");
-};
-
 SCREENS.summary = () => {
   const ses = S.session;
   if (!ses) return go("home");
   const r = ROOMS[ses.room];
-  const total = ses.results.reduce((a, x) => a + x.ms, 0);
+  const cats = {};
+  ses.missions.forEach((m) => (cats[m.cat] = (cats[m.cat] || 0) + (ses.per || 0)));
   app.innerHTML = `
     <div class="result">
       <div class="icon">${r.emoji}✨</div>
       <h1>${r.name} posprzątana!</h1>
       <div class="gain">+${ses.earned} pkt</div>
-      <p class="muted" style="font-weight:800">Łączny czas: ${fmtTime(total)} · ${streakStage(currentStreak()).icon} passa: ${currentStreak()}</p>
+      <p class="muted" style="font-weight:800">Czas: ${fmtTime(ses.totalMs || 0)} · ${streakStage(currentStreak()).icon} passa: ${currentStreak()}</p>
+      ${ses.okMsg ? `<p style="font-weight:700"><span class="ai-chip">AI</span>${esc(ses.okMsg)}</p>` : ""}
     </div>
     <div class="card">
-      <table class="score-table">
-        ${ses.results.map((x) => `<tr><td>${esc(x.mission)}<br><small class="muted">${fmtTime(x.ms)}</small></td><td>+${x.pts}</td></tr>`).join("")}
-      </table>
+      <ol class="mission-list">${ses.missions.map((m) => `<li class="ok"><span>${esc(m.text)}</span></li>`).join("")}</ol>
     </div>
+    ${ses.per ? `<p style="font-weight:800;text-align:center">${Object.entries(cats).map(([c, p]) => `+${p} ${catIcon(c)} ${esc(BADGE_CATEGORIES[c].label)}`).join(" · ")}
+      <br><span class="muted">(punkty na odznaki)</span></p>` : ""}
     <button class="btn" id="home">Wróć do domu</button>`;
-  confetti();
+  if (ses.earned > 0) confetti();
   $("#home").onclick = () => { S.session = null; save(); go("home"); };
 };
 
@@ -1330,8 +1348,8 @@ SCREENS.clean = (params = {}) => {
   }
   let hash = null;
   verifyUI({
-    url,
-    file,
+    urls: [url],
+    hasPhoto: !!file,
     title: `${r.name} – skan czystości`,
     room,
     failLabel: "Zakończ skan",

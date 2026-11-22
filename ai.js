@@ -158,40 +158,36 @@ function guessCategory(text) {
   return hit ? hit[0] : "inne";
 }
 
-/** Skan bałaganu (1–3 zdjęcia) → lista misji. */
+/** Skan bałaganu (1–3 zdjęcia) → lista zadań. */
 AI.analyzeRoom = async ({ roomName, photos, notes }) => {
   const [min, max] = [3, 6];
   const imgs = [];
   for (const p of photos.slice(0, Math.max(1, AI.maxImages))) imgs.push(await shrinkImage(p));
   const cats = TASK_CATEGORIES.map((k) => `- "${k}" – ${BADGE_CATEGORIES[k].ai}`).join("\n");
-  const prompt = `Jesteś asystentem w grze CLEAN QUEST, która zamienia sprzątanie w misje na czas.
+  const prompt = `Jesteś asystentem w grze CLEAN QUEST, która zamienia sprzątanie w wyścig z czasem.
 ${imgs.length > 1 ? `Dostajesz ${imgs.length} zdjęcia tego samego pomieszczenia (${roomName}) z różnych stron.` : `Na zdjęciu jest pomieszczenie: ${roomName}.`}
 ${WHO}
 ${notesBlock(notes)}
-Rozpoznaj bałagan widoczny na zdjęciach i ułóż od ${min} do ${max} misji sprzątania w najlepszej kolejności:
-najpierw rzeczy pilne (np. jedzenie wymagające chłodzenia do lodówki), potem naczynia, śmieci,
+Rozpoznaj bałagan widoczny na zdjęciach i ułóż od ${min} do ${max} zadań sprzątania w najlepszej kolejności:
+najpierw rzeczy pilne (np. jedzenie, które może się zepsuć), potem naczynia, śmieci,
 odkładanie rzeczy na miejsce, a na końcu przecieranie powierzchni.
-- Każda misja to jedno konkretne polecenie w trybie rozkazującym, najwyżej 70 znaków,
-  dotyczące tego, co NAPRAWDĘ widać na zdjęciach (np. "Włóż mleko i ser do lodówki").
-- Wolę misje pojedyncze: jedna czynność w jednym miejscu.
-- Każda misja ma listę "checks" – punkty do sfotografowania. Gracz robi OSOBNE zdjęcie każdego miejsca,
-  bo często nie da się złapać wszystkiego na jednym zdjęciu. Jeśli misja dotyczy dwóch miejsc
-  (np. "Zdejmij pranie z kaloryfera i włóż do pralki"), daj dwa punkty: kaloryfer i pralka.
-  Najwyżej 3 punkty na misję. Każdy punkt: "where" – krótka nazwa miejsca do zdjęcia (do 25 znaków),
-  "check" – co musi być widać na zdjęciu tego miejsca, żeby punkt zaliczyć.
-- Każda misja ma "category" – dokładnie jeden klucz z tej listy. Wybierz go na podstawie tego, co widać
-  na zdjęciu przy tej misji (jaka to rzecz i gdzie leży). Jeśli nic nie pasuje, użyj "inne":
+- Każde zadanie to jedno konkretne polecenie w trybie rozkazującym, najwyżej 70 znaków,
+  dotyczące tego, co NAPRAWDĘ widać na zdjęciach.
+- Nie zgaduj, gdzie gracz trzyma rzeczy. Konkretne miejsce podawaj tylko, gdy jest oczywiste
+  (śmieci → kosz, brudne naczynia → zmywarka albo zlew). W pozostałych przypadkach pisz „odłóż na miejsce”
+  (np. "Odłóż słoik i przyprawy z blatu na miejsce", a NIE "Włóż słoik do lodówki").
+- Gracz nie robi zdjęć poszczególnych zadań – na koniec sfotografuje całe posprzątane pomieszczenie.
+- Każde zadanie ma "category" – dokładnie jeden klucz z tej listy. Wybierz go na podstawie tego, co widać
+  na zdjęciu przy tym zadaniu (jaka to rzecz i gdzie leży). Jeśli nic nie pasuje, użyj "inne":
 ${cats}
-- Jedna misja powinna dać się zrobić w 1–15 minut.
+- Jedno zadanie powinno dać się zrobić w 1–15 minut.
 - Rzeczy, które według uwag gracza mają tu stałe miejsce, pomiń.
-- Jeśli pomieszczenie jest już posprzątane, zwróć pustą listę misji.
+- Jeśli pomieszczenie jest już posprzątane, zwróć pustą listę zadań.
 - Jeśli zdjęcia nie przedstawiają pomieszczenia (${roomName}), ustaw "valid": false.
 
 Odpowiedz wyłącznie JSON-em w tym formacie:
 {"valid": true, "comment": "jedno zdanie po polsku o tym, co widzisz", "missions": [
-  {"text": "Zdejmij pranie z kaloryfera i włóż do pralki", "category": "pranie", "checks": [
-    {"where": "kaloryfer", "check": "na kaloryferze nie wiszą ubrania"},
-    {"where": "pralka", "check": "ubrania są w bębnie pralki"}]}]}`;
+  {"text": "Odłóż słoik i przyprawy z blatu na miejsce", "category": "odkladanie"}]}`;
   const r = await aiCall(prompt, imgs, "default");
   const missions = Array.isArray(r && r.missions) ? r.missions : [];
   return {
@@ -201,55 +197,56 @@ Odpowiedz wyłącznie JSON-em w tym formacie:
       .filter((m) => m && m.text)
       .slice(0, max)
       .map((m) => {
-        const checks = (Array.isArray(m.checks) ? m.checks : [])
-          .filter((c) => c && c.check)
-          .slice(0, 3)
-          .map((c) => ({ where: String(c.where || "").slice(0, 30), check: String(c.check).slice(0, 200) }));
         const text = String(m.text).slice(0, 120);
         const cat = TASK_CATEGORIES.includes(m.category) ? m.category : guessCategory(text);
-        return { text, cat, checks };
+        return { text, cat };
       }),
   };
 };
 
 /**
- * Zdjęcie kontrolne. Misja może mieć kilka punktów (miejsc) – każde zdjęcie zalicza te punkty,
- * które na nim widać. `pending` to numery punktów, które jeszcze nie są zaliczone.
- * Zwraca {done: [numery zaliczonych teraz punktów], message}.
+ * Sprawdzenie na koniec sprzątania: 1–3 zdjęcia PO (i dla porównania zdjęcia PRZED).
+ * Zwraca {passed, message, remarks: [uwagi, co poprawić], remaining: [numery niezrobionych zadań]}.
  */
-AI.verifyMission = async ({ roomName, mission, pending, before, after, comment, notes }) => {
-  const befores = (before || []).slice(0, Math.max(0, Math.min(2, AI.maxImages - 1)));
+AI.verifyRoom = async ({ roomName, missions, before, after, comment, notes }) => {
+  const limit = Math.max(1, AI.maxImages);
+  const afters = (after || []).slice(0, limit);
+  const befores = (before || []).slice(0, Math.max(0, Math.min(2, limit - afters.length)));
   const images = [];
   for (const b of befores) images.push(await shrinkImage(b));
-  images.push(await shrinkImage(after));
+  for (const a of afters) images.push(await shrinkImage(a));
   const photos = befores.length
-    ? `${befores.length === 1 ? "Pierwsze zdjęcie to" : `Pierwsze ${befores.length} zdjęcia to`} ogólny widok pomieszczenia PRZED sprzątaniem (dla kontekstu). Ostatnie zdjęcie to nowe zdjęcie kontrolne PO – oceniasz właśnie je.`
-    : "Zdjęcie to zdjęcie kontrolne PO wykonaniu (części) misji.";
-  const list = pending.map((i) => {
-    const c = mission.checks[i];
-    return `${i}. ${c.where ? `[${c.where}] ` : ""}${c.check}`;
-  }).join("\n");
+    ? `${befores.length === 1 ? "Pierwsze zdjęcie to" : `Pierwsze ${befores.length} zdjęcia to`} pomieszczenie PRZED sprzątaniem (tylko dla porównania). ${afters.length === 1 ? "Ostatnie zdjęcie to" : `Ostatnie ${afters.length} zdjęcia to`} pomieszczenie PO sprzątaniu – oceniasz właśnie je.`
+    : `${afters.length === 1 ? "Zdjęcie przedstawia" : `${afters.length} zdjęcia przedstawiają`} pomieszczenie PO sprzątaniu.`;
+  const list = missions.map((m, i) => `${i}. ${m.text}`).join("\n");
   const prompt = `Gra CLEAN QUEST. Pomieszczenie: ${roomName}. ${WHO}
-Misja gracza: "${mission.text}".
-Punkty do zaliczenia (numer. [miejsce] co ma być widać):
+Gracz miał do zrobienia te zadania (numer. treść):
 ${list}
 ${photos}
 ${notesBlock(notes)}${commentBlock(comment)}
-Gracz może fotografować każde miejsce OSOBNO. Oceń, które z powyższych punktów widać na zdjęciu kontrolnym jako wykonane.
-- Zalicz punkt, jeśli jego miejsce jest na zdjęciu i warunek jest spełniony.
-- Punkt, którego miejsca nie widać na zdjęciu, po prostu pomiń (gracz zrobi mu osobne zdjęcie) – to nie jest błąd.
-- Nie oceniaj niczego spoza tych punktów. Bądź uczciwy, ale nie przesadnie surowy.
-- Jeśli zdjęcie jest nieostre albo za ciemne, nie zaliczaj niczego i poproś o lepsze ujęcie.
+Oceń, czy pomieszczenie jest po prostu posprzątane – to jest cel, a nie odhaczenie każdego punktu z osobna.
+- Nie sprawdzaj, DOKĄD gracz odłożył rzeczy (słoik nie musi być w lodówce). Liczy się, że nie leżą już na wierzchu,
+  a widoczne miejsca wyglądają porządnie. Rzeczy stojące porządnie na swoim stałym miejscu to nie bałagan.
+- Zdjęcia PO powinny pokazywać miejsca, w których na zdjęciach PRZED był bałagan. Jeśli ważnego miejsca nie widać,
+  nie zaliczaj i w uwagach poproś o zdjęcie tego miejsca.
+- Bądź uczciwy, ale nie przesadnie surowy. Drobiazgi bez znaczenia pomiń.
+- Jeśli zdjęcia są nieostre, za ciemne, są zdjęciem ekranu albo nie przedstawiają pomieszczenia (${roomName}), nie zaliczaj.
+- Przy niezaliczeniu podaj 1–4 krótkie uwagi w trybie rozkazującym, co jeszcze poprawić
+  (np. "Odłóż słoik z blatu na miejsce"), i numery zadań, które nie są jeszcze zrobione.
 
 Odpowiedz wyłącznie JSON-em:
-{${comment ? `"comment_ok": true, ` : ""}"done": [numery zaliczonych punktów, np. 1], "message": "krótki komunikat po polsku, najwyżej 100 znaków: co zaliczone, a jeśli coś zostało – co jeszcze zrobić albo sfotografować"}`;
-  const r = await aiCall(prompt, images, comment ? "default" : "quick");
-  // Komentarz wyjaśnia sytuację → zaliczamy wszystkie pozostałe punkty misji.
-  if (comment && r && r.comment_ok === true) {
-    return { done: pending.slice(), message: String(r.message || "Rozumiem – te rzeczy mają tu swoje miejsce. Zaliczone!") };
-  }
-  const done = (Array.isArray(r && r.done) ? r.done : []).map(Number).filter((i) => pending.includes(i));
-  return { done: [...new Set(done)], message: String((r && r.message) || "") };
+{${comment ? `"comment_ok": true, ` : ""}"clean": true, "remaining": [], "remarks": [], "message": "krótki komunikat po polsku, najwyżej 100 znaków"}`;
+  const r = await aiCall(prompt, images, "default");
+  const passed = !!(r && (r.clean === true || (comment && r.comment_ok === true)));
+  const remarks = passed ? [] : (Array.isArray(r && r.remarks) ? r.remarks : []).filter(Boolean).slice(0, 4).map((x) => String(x).slice(0, 120));
+  const remaining = passed ? [] : (Array.isArray(r && r.remaining) ? r.remaining : []).map(Number)
+    .filter((i) => Number.isInteger(i) && i >= 0 && i < missions.length);
+  return {
+    passed,
+    remarks,
+    remaining,
+    message: String((r && r.message) || (passed ? "Czysto – zaliczone!" : "")).slice(0, 200),
+  };
 };
 
 /** Skan czystości (bonus +14): czy całe pomieszczenie jest naprawdę posprzątane. */

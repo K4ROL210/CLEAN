@@ -275,7 +275,7 @@ body.gated .topbar, body.gated .bottomnav { display: none; }
   display: grid; place-items: center; background: var(--green); color: #fff;
   font-family: var(--font-head); font-weight: 800;
 }
-.mission-list li.done::before { content: "✓"; background: var(--green-dark); }
+.mission-list li.done::before, .mission-list li.ok::before { content: "✓"; background: var(--green-dark); }
 .mission-list li.done { color: var(--muted); text-decoration: line-through; }
 
 /* ---------- mission ---------- */
@@ -406,3 +406,8 @@ body.gated .topbar, body.gated .bottomnav { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Lista zadań do odhaczania i uwagi AI po sprawdzeniu */
+.mission-list.tick li { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.remarks { margin: 8px 0 0; padding-left: 20px; text-align: left; }
+.remarks li { margin: 2px 0; }
